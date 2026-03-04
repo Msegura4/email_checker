@@ -40,6 +40,40 @@ def _inject_secrets_to_env():
 
 _inject_secrets_to_env()
 
+# ── Authentification par mot de passe ─────────────────────────────────────────
+import hashlib
+
+_PWD_HASH = "fcce58be61a2083ff22c7bc129ecdbfd59ce9f782ba3f18c5f25cb6c055d5945"
+
+def _check_password() -> bool:
+    """Affiche un écran de login et retourne True si le mot de passe est correct."""
+    if st.session_state.get("authenticated"):
+        return True
+
+    st.set_page_config(page_title="Email Checker — Login", page_icon="🔐", layout="centered")
+
+    st.markdown("""
+    <div style='text-align:center; padding: 3rem 0 1rem 0;'>
+        <h1>🔐 Email Checker</h1>
+        <p style='color:#94a3b8;'>Entrez le mot de passe pour accéder à l'application.</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        pwd = st.text_input("Mot de passe", type="password", label_visibility="collapsed",
+                            placeholder="Mot de passe...")
+        if st.button("Accéder", type="primary", use_container_width=True):
+            if hashlib.sha256(pwd.encode()).hexdigest() == _PWD_HASH:
+                st.session_state["authenticated"] = True
+                st.rerun()
+            else:
+                st.error("Mot de passe incorrect.")
+    return False
+
+if not _check_password():
+    st.stop()
+
 from profile_manager import (
     list_profiles,
     list_default_profiles,
@@ -203,8 +237,8 @@ if st.sidebar.button("📬 Connexion mail", key="nav_mail"):
 
 st.sidebar.divider()
 
-# ── Section 2 : Gestion des tris ──────────────────────────────────────────
-st.sidebar.markdown('<p class="nav-section">Gestion des tris</p>', unsafe_allow_html=True)
+# ── Section 2 : Gestion des profils ──────────────────────────────────────────
+st.sidebar.markdown('<p class="nav-section">Gestion des profils</p>', unsafe_allow_html=True)
 if st.sidebar.button("🔒 Tris par défaut", key="nav_defaut"):
     _nav("profils_defaut")
 if st.sidebar.button("📋 Dupliquer un tri par défaut", key="nav_dupliquer"):
@@ -354,7 +388,7 @@ if page == "lancer":
         with col_title:
             st.markdown(f"### 📋 Résultats — {len(actifs)} emails")
         with col_stats:
-            st.caption(f"{conserves} à conserver · 🗑️ {supprimes} à supprimer")
+            st.caption(f"✅ {conserves} à conserver · 🗑️ {supprimes} à supprimer")
 
         # Dialog pour afficher un email complet
         @st.dialog("📧 Contenu de l'email", width="large")
@@ -839,7 +873,7 @@ elif page == "admin_mail":
 
     current_provider = os.getenv("MAIL_PROVIDER", "gmail")
     provider = st.radio(
-        "Choisir le type de compte mail",
+        "Choisir le provider",
         ["gmail", "imap"],
         index=0 if current_provider == "gmail" else 1,
         horizontal=True,
@@ -931,12 +965,12 @@ elif page == "admin_diag":
         st.divider()
 
         # 1. Fichiers
-        st.subheader("📁 Fichiers google (dev)")
+        st.subheader("📁 Fichiers")
         col1, col2 = st.columns(2)
         with col1:
-            st.metric("credentials.json", "Présent" if Path("credentials.json").exists() else "❌ Absent")
+            st.metric("credentials.json", "✅ Présent" if Path("credentials.json").exists() else "❌ Absent")
         with col2:
-            st.metric("token.json", "Présent" if Path("token.json").exists() else "❌ Absent")
+            st.metric("token.json", "✅ Présent" if Path("token.json").exists() else "❌ Absent")
 
         st.divider()
 
@@ -944,9 +978,9 @@ elif page == "admin_diag":
         st.subheader("⚙️ Variables d'environnement")
         col1, col2 = st.columns(2)
         with col1:
-            st.metric("GROQ_KEY", "Définie" if os.getenv("GROQ_KEY") else "❌ Manquante")
+            st.metric("GROQ_KEY", "✅ Définie" if os.getenv("GROQ_KEY") else "❌ Manquante")
         with col2:
-            st.metric("Type de compte", os.getenv("MAIL_PROVIDER", "gmail").upper())
+            st.metric("MAIL_PROVIDER", os.getenv("MAIL_PROVIDER", "gmail").upper())
 
         st.divider()
 
@@ -965,7 +999,7 @@ elif page == "admin_diag":
                         model="llama-3.3-70b-versatile",
                         max_tokens=5,
                     )
-                    st.success("Groq opérationnel — modèle : `llama-3.3-70b-versatile`")
+                    st.success("✅ Groq opérationnel — modèle : `llama-3.3-70b-versatile`")
                 except Exception as e:
                     st.error(f"❌ Groq inaccessible : {e}")
 
@@ -988,7 +1022,7 @@ elif page == "admin_diag":
                     _profile = _svc.users().getProfile(userId="me").execute()
                     _email   = _profile.get("emailAddress", "inconnu")
                     _n_msgs  = _profile.get("messagesTotal", "?")
-                    st.success(f"Connecté : **{_email}** ({_n_msgs:,} messages)" if isinstance(_n_msgs, int) else f"✅ Connecté : **{_email}**")
+                    st.success(f"✅ Connecté : **{_email}** ({_n_msgs:,} messages)" if isinstance(_n_msgs, int) else f"✅ Connecté : **{_email}**")
                 except Exception as e:
                     st.error(f"❌ Gmail inaccessible : {e}")
 
