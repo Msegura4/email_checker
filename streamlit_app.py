@@ -872,6 +872,7 @@ elif page == "admin_mail":
     st.title("📬 Connexion mail")
 
     current_provider = os.getenv("MAIL_PROVIDER", "gmail")
+
     provider = st.radio(
         "Choisir le provider",
         ["gmail", "imap"],
@@ -879,14 +880,15 @@ elif page == "admin_mail":
         horizontal=True,
         format_func=lambda x: "📧 Gmail (OAuth2)" if x == "gmail" else "📬 IMAP (Thunderbird, Outlook...)",
     )
+
+    # Sauvegarde silencieuse si changement, sans rerun
     if provider != current_provider:
         if not ENV_FILE.exists():
             ENV_FILE.touch()
         set_key(str(ENV_FILE), "MAIL_PROVIDER", provider)
-        st.rerun()
+        os.environ["MAIL_PROVIDER"] = provider
 
     if provider == "gmail":
-
         st.divider()
         st.markdown("**📧 Compte connecté**")
         if not Path("token.json").exists():
@@ -939,8 +941,8 @@ elif page == "admin_mail":
             set_key(str(ENV_FILE), "IMAP_FOLDER",   imap_folder)
             set_key(str(ENV_FILE), "IMAP_USE_SSL",  "true" if imap_ssl else "false")
             set_key(str(ENV_FILE), "MAIL_PROVIDER", "imap")
+            os.environ["MAIL_PROVIDER"] = "imap"
             st.success("✅ Config IMAP sauvegardée.")
-            st.rerun()
 
         st.divider()
         st.markdown("**Hôtes IMAP courants**")
