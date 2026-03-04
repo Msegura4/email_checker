@@ -1,0 +1,27 @@
+# ── Secrets & credentials ─────────────────────────────
+.env
+token.json
+credentials.json
+
+# ── Streamlit secrets locaux ──────────────────────────
+.streamlit/secrets.toml
+
+# ── Python ────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+env/
+venv/
+
+# ── OS ────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Fichiers de travail ───────────────────────────────
+mail.txt
+context.txt
+prompt.txt
+
+# ── Archives ──────────────────────────────────────────
+archive/

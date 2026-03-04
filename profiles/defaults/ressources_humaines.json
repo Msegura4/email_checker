@@ -1,0 +1,41 @@
+{
+  "id": "ressources_humaines",
+  "nom": "Ressources humaines",
+  "emoji": "👥",
+  "description": "Traitement des demandes RH : recrutement, onboarding, congés, paie, formation et départ.",
+  "categories": [
+    {
+      "id": "recrutement",
+      "label": "Recrutement",
+      "description": "Candidatures, offres d'emploi, entretiens, validation de poste, mobilité interne."
+    },
+    {
+      "id": "onboarding_offboarding",
+      "label": "Onboarding / Offboarding",
+      "description": "Intégration d'un nouveau collaborateur, départ, remise de matériel, accès systèmes."
+    },
+    {
+      "id": "conges_absences",
+      "label": "Congés & Absences",
+      "description": "Demande de congés, arrêt maladie, RTT, absence imprévue, justificatifs."
+    },
+    {
+      "id": "paie_avantages",
+      "label": "Paie & Avantages",
+      "description": "Question sur la fiche de paie, remboursement frais, mutuelle, tickets restaurant, avantages sociaux."
+    },
+    {
+      "id": "formation_carriere",
+      "label": "Formation & Carrière",
+      "description": "Demande de formation, entretien annuel, évolution de poste, bilan de compétences."
+    }
+  ],
+  "urgences": [
+    { "label": "Urgente",    "description": "Situation bloquante ou légalement sensible nécessitant une réponse immédiate (accident, litige...)." },
+    { "label": "Prioritaire","description": "Délai contractuel proche ou impact RH important (paie, départ imminent...)." },
+    { "label": "Normale",    "description": "Demande standard traitée dans les délais habituels (2-5 jours)." },
+    { "label": "Faible",     "description": "Demande d'information sans enjeu temporel, traitement au fil de l'eau." }
+  ],
+  "context": "Les emails proviennent de collaborateurs internes, de managers ou de candidats externes.\nIls concernent des demandes RH : recrutement, intégration, absences, questions sur la paie ou la carrière.",
+  "prompt": "Tu es un agent spécialisé dans la classification d'emails adressés aux Ressources Humaines.\nÀ partir du contenu d'un email fourni, détermine la catégorie de la demande et son niveau d'urgence.\nRéponds uniquement en JSON avec les clés : categorie, urgence, résumé.\nNe génère aucune autre information. Si l'email est ambigu, choisis les valeurs les plus probables."
+}

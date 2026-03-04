@@ -1,0 +1,42 @@
+{
+  "id": "support_informatique",
+  "nom": "Support informatique",
+  "emoji": "🖥️",
+  "description": "Traitement des tickets IT internes : bugs, accès, matériel, support utilisateur.",
+  "categories": [
+    {
+      "id": "probleme_technique_informatique",
+      "label": "Problème technique informatique",
+      "description": "Souci matériel ou logiciel local (ordinateur, périphérique, installation, lenteur...)"
+    },
+    {
+      "id": "demande_administrative",
+      "label": "Demande administrative",
+      "description": "Question ou demande liée aux RH, finance, documents, accès administratif, formulaires..."
+    },
+    {
+      "id": "probleme_acces_authentification",
+      "label": "Problème d'accès",
+      "description": "Impossibilité de se connecter, mot de passe, compte bloqué, SSO, MFA..."
+    },
+    {
+      "id": "support_utilisateur",
+      "label": "Support utilisateur",
+      "description": "Besoin d'aide générale, utilisation d'un outil, accompagnement, information."
+    },
+    {
+      "id": "bug_service",
+      "label": "Bug",
+      "description": "Anomalie reproductible sur un service ou application, comportement inattendu."
+    }
+  ],
+  "urgences": [
+    { "label": "Critique",  "description": "L'activité est bloquée totalement ; impact majeur ou sécurité en danger." },
+    { "label": "Élevée",    "description": "Forte gêne ; opération importante fortement perturbée." },
+    { "label": "Modérée",   "description": "Gêne notable mais contournable, travail possible." },
+    { "label": "Faible",    "description": "Problème mineur, impact limité, amélioration souhaitée." },
+    { "label": "Anodine",   "description": "Simple question, pas de problème réel, demande informative." }
+  ],
+  "context": "Les emails proviennent d'utilisateurs internes (employés, clients, partenaires).\nIls concernent principalement des problèmes techniques, du support, des demandes administratives ou des incidents de connexion.",
+  "prompt": "Tu es un agent spécialisé dans la classification d'emails internes IT.\nÀ partir du contenu d'un email fourni, détermine la catégorie et le niveau d'urgence.\nRéponds uniquement en JSON avec les clés : categorie, urgence, résumé.\nNe génère aucune autre information. Si l'email est ambigu, choisis les valeurs les plus probables."
+}

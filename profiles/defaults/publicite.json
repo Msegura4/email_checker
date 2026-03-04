@@ -1,0 +1,49 @@
+{
+  "id": "publicite",
+  "nom": "Publicité",
+  "emoji": "📢",
+  "description": "Tri automatique des emails publicitaires et promotionnels reçus.",
+  "categories": [
+    {
+      "id": "service",
+      "label": "Service",
+      "description": "Offre ou présentation d'un service : abonnement, plateforme, logiciel, prestation..."
+    },
+    {
+      "id": "produit",
+      "label": "Produit",
+      "description": "Promotion ou présentation d'un produit physique ou numérique."
+    },
+    {
+      "id": "promotion_en_cours",
+      "label": "Promotion en cours",
+      "description": "Offre promotionnelle active : réduction, code promo, vente flash encore valable."
+    },
+    {
+      "id": "promotion_passee",
+      "label": "Promotion passée",
+      "description": "Offre expirée, promotion terminée — à supprimer."
+    },
+    {
+      "id": "alimentation",
+      "label": "Alimentation",
+      "description": "Publicité liée à la nourriture, boissons, restauration, livraison de repas..."
+    }
+  ],
+  "urgences": [
+    {
+      "label": "À traiter",
+      "description": "Offre active à saisir rapidement (deadline proche, stock limité)."
+    },
+    {
+      "label": "À consulter",
+      "description": "Email intéressant à lire, sans urgence particulière."
+    },
+    {
+      "label": "À supprimer",
+      "description": "Promotion expirée ou email sans intérêt — peut être supprimé."
+    }
+  ],
+  "context": "Les emails proviennent d'entreprises, marques ou services qui envoient de la publicité.\nIls concernent des offres commerciales, promotions, newsletters marketing ou présentations de produits et services.\nL'objectif est de trier ces emails pour identifier ce qui vaut la peine d'être lu et ce qui peut être supprimé.",
+  "prompt": "Tu es un agent spécialisé dans la classification d'emails publicitaires et promotionnels.\nÀ partir du contenu d'un email fourni, détermine la catégorie et le niveau d'urgence.\nPour les promotions, détermine si elles sont encore actives ou expirées en te basant sur les dates mentionnées.\nRéponds uniquement en JSON avec les clés : categorie, urgence, résumé.\nNe génère aucune autre information. Si l'email est ambigu, choisis les valeurs les plus probables."
+}

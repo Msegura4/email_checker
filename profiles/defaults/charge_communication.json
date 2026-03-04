@@ -1,0 +1,42 @@
+{
+  "id": "charge_communication",
+  "nom": "Chargé de communication",
+  "emoji": "📣 ",
+  "description": "Gestion des demandes de communication : création de visuels, planning événements, réseaux sociaux, rédaction.",
+  "categories": [
+    {
+      "id": "creation_visuelle",
+      "label": "Création visuelle",
+      "description": "Demande de création ou modification de visuels, affiches, bannières, infographies, supports print ou digital."
+    },
+    {
+      "id": "evenement",
+      "label": "Planification événement",
+      "description": "Organisation ou coordination d'un événement : conférence, séminaire, webinaire, soirée, salon..."
+    },
+    {
+      "id": "reseaux_sociaux",
+      "label": "Réseaux sociaux",
+      "description": "Publication, planification de posts, gestion de campagnes ou de la communauté sur les réseaux."
+    },
+    {
+      "id": "redaction_contenu",
+      "label": "Rédaction de contenu",
+      "description": "Demande de rédaction : article, newsletter, communiqué de presse, texte web, script vidéo..."
+    },
+    {
+      "id": "validation_branding",
+      "label": "Validation / Branding",
+      "description": "Demande de validation de contenus, respect de la charte graphique, alignement avec l'identité de marque."
+    }
+  ],
+  "urgences": [
+    { "label": "Critique",  "description": "Deadline immédiate (moins de 24h), événement imminent ou crise de communication." },
+    { "label": "Élevée",    "description": "Deadline dans 2-3 jours, publication ou événement planifié proche." },
+    { "label": "Modérée",   "description": "Délai d'une semaine, demande planifiable sans urgence immédiate." },
+    { "label": "Faible",    "description": "Pas de deadline précise, demande à intégrer au planning courant." },
+    { "label": "Anodine",   "description": "Simple question, demande d'information ou suggestion sans enjeu immédiat." }
+  ],
+  "context": "Les emails proviennent de collaborateurs internes ou de partenaires externes.\nIls concernent des demandes de communication : création graphique, événements, publications sur les réseaux sociaux, rédaction de contenus ou validation de supports.",
+  "prompt": "Tu es un agent spécialisé dans la classification d'emails adressés à un chargé de communication.\nÀ partir du contenu d'un email fourni, détermine la catégorie de la demande et son niveau d'urgence.\nRéponds uniquement en JSON avec les clés : categorie, urgence, résumé.\nNe génère aucune autre information. Si l'email est ambigu, choisis les valeurs les plus probables."
+}
