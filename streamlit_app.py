@@ -8,71 +8,155 @@ import os
 import time
 from pathlib import Path
 
+import requests
 import streamlit as st
 from dotenv import load_dotenv, set_key
+from streamlit_oauth import OAuth2Component
 
 load_dotenv()
 
+
 # ── Lecture des secrets (Streamlit Cloud > .env) ──────────────────────────────
 def _secret(key: str, default: str = "") -> str:
-    """Lit depuis st.secrets en priorité, puis os.getenv, puis default."""
     try:
         return st.secrets[key]
     except Exception:
         return os.getenv(key, default)
 
+
 def _inject_secrets_to_env():
-    """Injecte les st.secrets dans os.environ pour compatibilité avec dotenv."""
-    for key in ["GROQ_KEY", "MAIL_PROVIDER", "IMAP_HOST", "IMAP_PORT",
-                "IMAP_USER", "IMAP_PASSWORD", "IMAP_FOLDER", "IMAP_USE_SSL"]:
+    for key in [
+        "GROQ_KEY",
+        "MAIL_PROVIDER",
+        "IMAP_HOST",
+        "IMAP_PORT",
+        "IMAP_USER",
+        "IMAP_PASSWORD",
+        "IMAP_FOLDER",
+        "IMAP_USE_SSL",
+    ]:
         val = _secret(key)
         if val:
             os.environ[key] = val
 
-    # Gmail OAuth via secrets : écriture des fichiers JSON si absents
-    gmail_token = _secret("GMAIL_TOKEN")
-    if gmail_token and not Path("token.json").exists():
-        Path("token.json").write_text(gmail_token, encoding="utf-8")
-
-    gmail_creds = _secret("GMAIL_CREDENTIALS")
-    if gmail_creds and not Path("credentials.json").exists():
-        Path("credentials.json").write_text(gmail_creds, encoding="utf-8")
 
 _inject_secrets_to_env()
 
-# ── Authentification par mot de passe ─────────────────────────────────────────
-import hashlib
+# ── Variables SSO au niveau MODULE ────────────────────────────────────────────
+CLIENT_ID = _secret("GOOGLE_CLIENT_ID")
+CLIENT_SECRET = _secret("GOOGLE_CLIENT_SECRET")
+REDIRECT_URI = _secret("REDIRECT_URI", "http://localhost:8501")
 
-_PWD_HASH = "fcce58be61a2083ff22c7bc129ecdbfd59ce9f782ba3f18c5f25cb6c055d5945"
+AUTHORIZATION_URL = "https://accounts.google.com/o/oauth2/v2/auth"
+TOKEN_URL = "https://oauth2.googleapis.com/token"
+REVOKE_URL = "https://oauth2.googleapis.com/revoke"
 
-def _check_password() -> bool:
-    """Affiche un écran de login et retourne True si le mot de passe est correct."""
-    if st.session_state.get("authenticated"):
+SCOPES_SSO = [
+    "openid",
+    "https://www.googleapis.com/auth/userinfo.email",
+    "https://www.googleapis.com/auth/userinfo.profile",
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.modify",
+]
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SESSION STATE INIT
+# ══════════════════════════════════════════════════════════════════════════════
+if "sso_token" not in st.session_state:
+    st.session_state.sso_token = None
+if "sso_user" not in st.session_state:
+    st.session_state.sso_user = None
+
+# ══════════════════════════════════════════════════════════════════════════════
+# CONFIG PAGE
+# ══════════════════════════════════════════════════════════════════════════════
+st.set_page_config(
+    page_title=(
+        "Email Checker — Login"
+        if st.session_state.sso_token is None
+        else "Email Checker"
+    ),
+    page_icon="🔐" if st.session_state.sso_token is None else "🎫",
+    layout="centered" if st.session_state.sso_token is None else "wide",
+    initial_sidebar_state=(
+        "collapsed" if st.session_state.sso_token is None else "expanded"
+    ),
+)
+
+
+def _get_user_info(token: dict):
+    headers = {"Authorization": f"Bearer {token['access_token']}"}
+    response = requests.get(
+        "https://www.googleapis.com/oauth2/v2/userinfo", headers=headers
+    )
+    return response.json() if response.status_code == 200 else None
+
+
+def _build_gmail_service_from_sso():
+    """Construit un service Gmail depuis le token SSO de la session courante."""
+    from google.oauth2.credentials import Credentials as _GCreds
+    from googleapiclient.discovery import build as _gbuild
+    token = st.session_state.sso_token
+    creds = _GCreds(
+        token=token["access_token"],
+        client_id=CLIENT_ID,
+        client_secret=CLIENT_SECRET,
+        token_uri=TOKEN_URL,
+    )
+    return _gbuild("gmail", "v1", credentials=creds)
+
+
+def _check_sso() -> bool:
+    if st.session_state.sso_token is not None:
         return True
 
-    st.set_page_config(page_title="Email Checker — Login", page_icon="🔐", layout="centered")
-
-    st.markdown("""
+    st.markdown(
+        """
     <div style='text-align:center; padding: 3rem 0 1rem 0;'>
         <h1>🔐 Email Checker</h1>
-        <p style='color:#94a3b8;'>Entrez le mot de passe pour accéder à l'application.</p>
+        <p style='color:#94a3b8;'>Connectez-vous avec votre compte Google</p>
     </div>
-    """, unsafe_allow_html=True)
+    """,
+        unsafe_allow_html=True,
+    )
 
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        pwd = st.text_input("Mot de passe", type="password", label_visibility="collapsed",
-                            placeholder="Mot de passe...")
-        if st.button("Accéder", type="primary", use_container_width=True):
-            if hashlib.sha256(pwd.encode()).hexdigest() == _PWD_HASH:
-                st.session_state["authenticated"] = True
-                st.rerun()
-            else:
-                st.error("Mot de passe incorrect.")
+        if not CLIENT_ID or not CLIENT_SECRET:
+            st.error(
+                "❌ Configuration SSO manquante (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET)."
+            )
+            return False
+
+        oauth2 = OAuth2Component(
+            CLIENT_ID,
+            CLIENT_SECRET,
+            AUTHORIZATION_URL,
+            TOKEN_URL,
+            REVOKE_URL,
+            REDIRECT_URI,
+        )
+
+        result = oauth2.authorize_button(
+            name="🔑 Connexion avec Google",
+            icon="https://www.google.com/favicon.ico",
+            redirect_uri=REDIRECT_URI,
+            scope=" ".join(SCOPES_SSO),
+            key="google_oauth_main",
+            extras_params={"prompt": "consent"},
+        )
+
+        if result and "token" in result:
+            st.session_state.sso_token = result["token"]
+            st.session_state.sso_user = _get_user_info(result["token"])
+            st.rerun()
+
     return False
 
-if not _check_password():
+
+if not _check_sso():
     st.stop()
+
 
 from profile_manager import (
     list_profiles,
@@ -89,17 +173,10 @@ from profile_manager import (
     get_category_to_sheet,
 )
 
-# ── Config page ───────────────────────────────────────────────────────────────
-st.set_page_config(
-    page_title="Email Checker",
-    page_icon="🎫",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
-
 ENV_FILE = Path(".env")
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 def _profile_label(p: dict) -> str:
     lock = " 🔒" if p.get("_is_default") else ""
@@ -130,13 +207,13 @@ if "active_profile_idx" not in st.session_state:
 page = st.session_state.page
 
 
-
 # ── Modal : choisir un profil ─────────────────────────────────────────────────
 @st.dialog("Choisir un profil", width="large")
 def profile_picker():
     profiles_all = _get_profiles()
 
-    st.markdown("""
+    st.markdown(
+        """
     <style>
     .profile-card {
         border: 1px solid rgba(255,255,255,0.1);
@@ -167,15 +244,17 @@ def profile_picker():
         margin: 0;
     }
     </style>
-    """, unsafe_allow_html=True)
+    """,
+        unsafe_allow_html=True,
+    )
 
     cols = st.columns(2)
     for i, p in enumerate(profiles_all):
-        lock     = " 🔒" if p.get("_is_default") else ""
-        emoji    = p.get("emoji", "📁")
-        nom      = p["nom"]
-        desc     = p.get("description", "")
-        is_active = (i == st.session_state.active_profile_idx)
+        lock = " 🔒" if p.get("_is_default") else ""
+        emoji = p.get("emoji", "📁")
+        nom = p["nom"]
+        desc = p.get("description", "")
+        is_active = i == st.session_state.active_profile_idx
         active_class = "active" if is_active else ""
         active_badge = " ✅" if is_active else ""
 
@@ -187,14 +266,20 @@ def profile_picker():
                 </div>""",
                 unsafe_allow_html=True,
             )
-            if st.button("Sélectionner", key=f"pick_{i}", type="primary" if is_active else "secondary", use_container_width=True):
+            if st.button(
+                "Sélectionner",
+                key=f"pick_{i}",
+                type="primary" if is_active else "secondary",
+                use_container_width=True,
+            ):
                 st.session_state.active_profile_idx = i
                 st.session_state.pop("profiles_cache", None)
                 st.rerun()
 
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
-st.sidebar.markdown("""
+st.sidebar.markdown(
+    """
 <style>
 div[data-testid="stSidebarNav"] { display: none; }
 .nav-section { font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
@@ -207,7 +292,24 @@ div[data-testid="stSidebar"] button {
 }
 div[data-testid="stSidebar"] button:hover { background: rgba(255,255,255,0.08); }
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
+
+# ── Infos utilisateur SSO dans la sidebar ─────────────────────────────────────
+if st.session_state.sso_user:
+    with st.sidebar:
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            st.image(st.session_state.sso_user.get("picture", ""), width=50)
+        with col2:
+            st.caption(f"**{st.session_state.sso_user.get('name')}**")
+            st.caption(st.session_state.sso_user.get("email"))
+        if st.button("🚪 Déconnexion"):
+            st.session_state.sso_token = None
+            st.session_state.sso_user = None
+            st.rerun()
+        st.divider()
 
 # Profil actif
 profiles = _get_profiles()
@@ -215,7 +317,6 @@ if st.session_state.active_profile_idx >= len(profiles):
     st.session_state.active_profile_idx = 0
 active_profile = profiles[st.session_state.active_profile_idx] if profiles else None
 
-# En-tête : titre + profil actif dans le même bloc
 st.sidebar.title("Bienvenu dans l'application Email Checker")
 if active_profile:
     st.sidebar.markdown(
@@ -227,18 +328,27 @@ if st.sidebar.button("↩ Changer de profil", key="btn_change_profile"):
 
 st.sidebar.divider()
 
-
 # ── Section 1 : Principal ─────────────────────────────────────────────────────
 st.sidebar.markdown('<p class="nav-section">Principal</p>', unsafe_allow_html=True)
 if st.sidebar.button("🚀 Lancer le tri", key="nav_lancer"):
     _nav("lancer")
-if st.sidebar.button("📬 Connexion mail", key="nav_mail"):
+if st.sidebar.button("📧 Compte connecté", key="nav_compte"):
+    st.session_state.pop("_mail_tab", None)
     _nav("admin_mail")
+if st.sidebar.button("🔄 Changer de compte mail", key="nav_changer_mail"):
+    st.session_state["_mail_tab"] = "changer"
+    _nav("admin_mail")
+if st.sidebar.button("🚪 Déconnecter son compte mail", key="nav_logout_mail"):
+    st.session_state["sso_token"] = None
+    st.session_state["sso_user"] = None
+    st.rerun()
 
 st.sidebar.divider()
 
 # ── Section 2 : Gestion des profils ──────────────────────────────────────────
-st.sidebar.markdown('<p class="nav-section">Gestion des profils</p>', unsafe_allow_html=True)
+st.sidebar.markdown(
+    '<p class="nav-section">Gestion des profils</p>', unsafe_allow_html=True
+)
 if st.sidebar.button("🔒 Tris par défaut", key="nav_defaut"):
     _nav("profils_defaut")
 if st.sidebar.button("📋 Dupliquer un tri par défaut", key="nav_dupliquer"):
@@ -252,8 +362,6 @@ st.sidebar.divider()
 
 # ── Section 3 : Administration ────────────────────────────────────────────────
 st.sidebar.markdown('<p class="nav-section">Administration</p>', unsafe_allow_html=True)
-if st.sidebar.button("🔑 API", key="nav_api"):
-    _nav("admin_api")
 if st.sidebar.button("🔍 Diagnostic", key="nav_diag"):
     _nav("admin_diag")
 if st.sidebar.button("🚧 Améliorations à venir", key="nav_roadmap"):
@@ -273,7 +381,9 @@ if page == "lancer":
 
     col_a, col_b, col_c = st.columns(3)
     with col_a:
-        max_emails = st.number_input("Nombre max d'emails", min_value=1, max_value=1000, value=50)
+        max_emails = st.number_input(
+            "Nombre max d'emails", min_value=1, max_value=1000, value=50
+        )
     with col_b:
         mark_as_read = st.toggle("Marquer comme lus après traitement", value=False)
     with col_c:
@@ -282,15 +392,13 @@ if page == "lancer":
     st.divider()
     log_area = st.empty()
 
-    groq_ok  = bool(os.getenv("GROQ_KEY"))
-
     if st.button("▶️ Démarrer", type="primary", use_container_width=True):
-        if not groq_ok:
-            st.error("Clé Groq manquante. Configurez-la dans 🔑 API.")
-            st.stop()
-
-        Path("context.txt").write_text(build_context_txt(active_profile), encoding="utf-8")
-        Path("prompt.txt").write_text(build_prompt_txt(active_profile),   encoding="utf-8")
+        Path("context.txt").write_text(
+            build_context_txt(active_profile), encoding="utf-8"
+        )
+        Path("prompt.txt").write_text(
+            build_prompt_txt(active_profile), encoding="utf-8"
+        )
 
         logs = []
 
@@ -305,6 +413,20 @@ if page == "lancer":
                 provider = os.getenv("MAIL_PROVIDER", "gmail").lower()
                 if provider == "gmail":
                     from mail_reader_gmail import GmailReader as MailReader
+                    # Injecter le token SSO dans token.json temporairement
+                    import json as _json
+                    _token_data = {
+                        "token": st.session_state.sso_token["access_token"],
+                        "refresh_token": st.session_state.sso_token.get("refresh_token", ""),
+                        "token_uri": TOKEN_URL,
+                        "client_id": CLIENT_ID,
+                        "client_secret": CLIENT_SECRET,
+                        "scopes": [
+                            "https://www.googleapis.com/auth/gmail.readonly",
+                            "https://www.googleapis.com/auth/gmail.modify",
+                        ],
+                    }
+                    Path("token.json").write_text(_json.dumps(_token_data), encoding="utf-8")
                 else:
                     from mail_reader_imap import IMAPReader as MailReader
 
@@ -316,7 +438,9 @@ if page == "lancer":
 
                 with MailReader() as reader:
                     add_log(f"[INFO] Récupération des emails (max {max_emails})...")
-                    tickets = reader.fetch_unread_emails(max_results=max_emails, mark_as_read=False)
+                    tickets = reader.fetch_unread_emails(
+                        max_results=max_emails, mark_as_read=False
+                    )
                     add_log(f"[INFO] {len(tickets)} emails récupérés.")
 
                     if not tickets:
@@ -328,24 +452,26 @@ if page == "lancer":
                     success, errors = 0, 0
 
                     for i, ticket in enumerate(tickets, 1):
-                        sujet   = ticket.get("sujet", "(Sans sujet)")
-                        corps   = ticket.get("corps", "")
+                        sujet = ticket.get("sujet", "(Sans sujet)")
+                        corps = ticket.get("corps", "")
                         mail_id = ticket.get("id")
                         add_log(f"[{i}/{len(tickets)}] {sujet[:60]}...")
 
                         try:
-                            result    = classify_mail(f"Sujet : {sujet}\n\n{corps}")
+                            result = classify_mail(f"Sujet : {sujet}\n\n{corps}")
                             categorie = result.get("categorie", "")
-                            urgence   = result.get("urgence",   "")
-                            resume    = result.get("résumé",    sujet)
-                            results.append({
-                                "Sujet":     sujet,
-                                "Catégorie": categorie,
-                                "Urgence":   urgence,
-                                "Synthèse":  resume,
-                                "Corps":     corps,
-                                "_mail_id":  mail_id,
-                            })
+                            urgence = result.get("urgence", "")
+                            resume = result.get("résumé", sujet)
+                            results.append(
+                                {
+                                    "Sujet": sujet,
+                                    "Catégorie": categorie,
+                                    "Urgence": urgence,
+                                    "Synthèse": resume,
+                                    "Corps": corps,
+                                    "_mail_id": mail_id,
+                                }
+                            )
                             if mark_as_read:
                                 reader.mark_as_read(mail_id)
                             add_log(f"  → {categorie} | {urgence}")
@@ -372,17 +498,24 @@ if page == "lancer":
     # ── Résultats ─────────────────────────────────────────────────────────────
     if "last_results" in st.session_state and st.session_state["last_results"]:
         import pandas as pd
+
         st.divider()
         results = st.session_state["last_results"]
 
-        # Init état des actions
         if "mail_actions" not in st.session_state:
-            st.session_state.mail_actions = {}  # idx -> "supprimer" | "conserver" | None
+            st.session_state.mail_actions = {}
 
-        # Compter les emails actifs (non supprimés)
-        actifs = [r for i, r in enumerate(results) if st.session_state.mail_actions.get(i) != "supprimer"]
-        conserves = sum(1 for v in st.session_state.mail_actions.values() if v == "conserver")
-        supprimes = sum(1 for v in st.session_state.mail_actions.values() if v == "supprimer")
+        actifs = [
+            r
+            for i, r in enumerate(results)
+            if st.session_state.mail_actions.get(i) != "supprimer"
+        ]
+        conserves = sum(
+            1 for v in st.session_state.mail_actions.values() if v == "conserver"
+        )
+        supprimes = sum(
+            1 for v in st.session_state.mail_actions.values() if v == "supprimer"
+        )
 
         col_title, col_stats = st.columns([3, 2])
         with col_title:
@@ -390,10 +523,10 @@ if page == "lancer":
         with col_stats:
             st.caption(f"✅ {conserves} à conserver · 🗑️ {supprimes} à supprimer")
 
-        # Dialog pour afficher un email complet
         @st.dialog("📧 Contenu de l'email", width="large")
         def show_email(idx):
             import re
+
             mail = results[idx]
             st.markdown(f"**Sujet :** {mail['Sujet']}")
             st.markdown(f"**Catégorie :** {mail['Catégorie']}")
@@ -420,72 +553,88 @@ if page == "lancer":
                 unsafe_allow_html=True,
             )
 
-        # Fonction pour mettre à la corbeille sur Gmail
         def trash_on_gmail(mail_ids: list) -> tuple[int, int]:
             provider = os.getenv("MAIL_PROVIDER", "gmail").lower()
             ok, fail = 0, 0
             if provider == "gmail":
                 try:
-                    from google.oauth2.credentials import Credentials as _GC
-                    from googleapiclient.discovery import build as _gb
-                    _creds = _GC.from_authorized_user_file("token.json")
-                    _svc   = _gb("gmail", "v1", credentials=_creds)
+                    _svc = _build_gmail_service_from_sso()
                     for mid in mail_ids:
                         if mid:
                             try:
-                                _svc.users().messages().trash(userId="me", id=mid).execute()
+                                _svc.users().messages().trash(
+                                    userId="me", id=mid
+                                ).execute()
                                 ok += 1
                             except Exception:
                                 fail += 1
                 except Exception:
                     fail += len(mail_ids)
             return ok, fail
-        urgency_order = {u["label"]: i for i, u in enumerate(active_profile.get("urgences", []))}
+
+        urgency_order = {
+            u["label"]: i for i, u in enumerate(active_profile.get("urgences", []))
+        }
         sorted_results = sorted(
-            enumerate(results),
-            key=lambda x: urgency_order.get(x[1]["Urgence"], 99)
+            enumerate(results), key=lambda x: urgency_order.get(x[1]["Urgence"], 99)
         )
 
-        # Onglets par catégorie
         categories = [c["label"] for c in active_profile.get("categories", [])]
         tab_labels = []
         for cat in categories:
-            count = sum(1 for _, r in sorted_results
-                        if r["Catégorie"] == cat
-                        and st.session_state.mail_actions.get(_) != "supprimer")
+            count = sum(
+                1
+                for _, r in sorted_results
+                if r["Catégorie"] == cat
+                and st.session_state.mail_actions.get(_) != "supprimer"
+            )
             tab_labels.append(f"{cat} ({count})")
 
         tabs = st.tabs(tab_labels)
         for tab, cat in zip(tabs, categories):
             with tab:
-                cat_results = [(gi, r) for gi, r in sorted_results
-                               if r["Catégorie"] == cat
-                               and st.session_state.mail_actions.get(gi) != "supprimer"]
+                cat_results = [
+                    (gi, r)
+                    for gi, r in sorted_results
+                    if r["Catégorie"] == cat
+                    and st.session_state.mail_actions.get(gi) != "supprimer"
+                ]
                 if not cat_results:
                     st.caption("Aucun email dans cette catégorie.")
                 else:
-                    # En-tête colonnes
                     h1, h2, h3, h4, h5 = st.columns([0.5, 5, 2, 1, 1])
-                    with h1: st.caption("☑")
-                    with h2: st.caption("Sujet")
-                    with h3: st.caption("Urgence")
-                    with h4: st.caption("")
-                    with h5: st.caption("")
+                    with h1:
+                        st.caption("☑")
+                    with h2:
+                        st.caption("Sujet")
+                    with h3:
+                        st.caption("Urgence")
+                    with h4:
+                        st.caption("")
+                    with h5:
+                        st.caption("")
 
                     for gi, mail in cat_results:
                         action = st.session_state.mail_actions.get(gi)
                         is_kept = action == "conserver"
 
-                        col_chk, col_sujet, col_urg, col_view, col_act = st.columns([0.5, 5, 2, 1, 1])
+                        col_chk, col_sujet, col_urg, col_view, col_act = st.columns(
+                            [0.5, 5, 2, 1, 1]
+                        )
 
                         with col_chk:
-                            checked = st.checkbox("", key=f"chk_{gi}", value=is_kept, label_visibility="collapsed")
+                            checked = st.checkbox(
+                                "",
+                                key=f"chk_{gi}",
+                                value=is_kept,
+                                label_visibility="collapsed",
+                            )
 
                         with col_sujet:
                             style = "color:#4ade80;" if is_kept else ""
                             st.markdown(
                                 f"<span style='font-size:0.9rem;{style}'>{mail['Sujet'][:75]}</span>",
-                                unsafe_allow_html=True
+                                unsafe_allow_html=True,
                             )
 
                         with col_urg:
@@ -503,24 +652,39 @@ if page == "lancer":
                                 st.session_state.mail_actions[gi] = None
                                 st.rerun()
 
-                    # Bouton supprimer les sélectionnés
-                    selected = [gi for gi, _ in cat_results if st.session_state.mail_actions.get(gi) == "conserver"]
+                    selected = [
+                        gi
+                        for gi, _ in cat_results
+                        if st.session_state.mail_actions.get(gi) == "conserver"
+                    ]
                     if selected:
                         st.markdown("")
                         col_del, col_reset = st.columns([1, 1])
                         with col_del:
-                            if st.button(f"🗑️ Supprimer la sélection ({len(selected)})", key=f"del_{cat}", type="secondary"):
-                                mail_ids = [results[gi].get("_mail_id") for gi in selected]
+                            if st.button(
+                                f"🗑️ Supprimer la sélection ({len(selected)})",
+                                key=f"del_{cat}",
+                                type="secondary",
+                            ):
+                                mail_ids = [
+                                    results[gi].get("_mail_id") for gi in selected
+                                ]
                                 ok, fail = trash_on_gmail(mail_ids)
                                 for gi in selected:
                                     st.session_state.mail_actions[gi] = "supprimer"
                                 if ok:
-                                    st.success(f"✅ {ok} email(s) mis à la corbeille sur Gmail.")
+                                    st.success(
+                                        f"✅ {ok} email(s) mis à la corbeille sur Gmail."
+                                    )
                                 if fail:
-                                    st.warning(f"⚠️ {fail} email(s) non supprimés (IMAP ou erreur).")
+                                    st.warning(
+                                        f"⚠️ {fail} email(s) non supprimés (IMAP ou erreur)."
+                                    )
                                 st.rerun()
                         with col_reset:
-                            if st.button("↩️ Désélectionner", key=f"reset_{cat}", type="secondary"):
+                            if st.button(
+                                "↩️ Désélectionner", key=f"reset_{cat}", type="secondary"
+                            ):
                                 for gi in selected:
                                     st.session_state.mail_actions[gi] = None
                                 st.rerun()
@@ -528,11 +692,13 @@ if page == "lancer":
         st.divider()
         col_csv, col_clear = st.columns([2, 1])
         with col_csv:
-            df_export = pd.DataFrame([
-                {k: v for k, v in r.items() if k != "Corps"}
-                for i, r in enumerate(results)
-                if st.session_state.mail_actions.get(i) != "supprimer"
-            ])
+            df_export = pd.DataFrame(
+                [
+                    {k: v for k, v in r.items() if k != "Corps"}
+                    for i, r in enumerate(results)
+                    if st.session_state.mail_actions.get(i) != "supprimer"
+                ]
+            )
             csv = df_export.to_csv(index=False).encode("utf-8")
             st.download_button(
                 label="⬇️ Exporter en CSV",
@@ -553,7 +719,8 @@ if page == "lancer":
 elif page == "profils_defaut":
     st.title("🔒 Tris par défaut")
 
-    st.markdown("""
+    st.markdown(
+        """
     <style>
     details[open] > summary {
         background-color: #fef2f2 !important;
@@ -564,7 +731,9 @@ elif page == "profils_defaut":
     details[open] > summary p { color: #b91c1c !important; font-weight: 600; }
     details[open] > summary svg { fill: #ef4444 !important; }
     </style>
-    """, unsafe_allow_html=True)
+    """,
+        unsafe_allow_html=True,
+    )
 
     default_profiles = list_default_profiles()
     if not default_profiles:
@@ -577,11 +746,13 @@ elif page == "profils_defaut":
         st.divider()
 
         for p in default_profiles:
-            pid   = p["id"]
+            pid = p["id"]
             pcats = p.get("categories", [])
-            purgs = p.get("urgences",   [])
+            purgs = p.get("urgences", [])
 
-            with st.expander(f"{p.get('emoji','📁')} **{p['nom']}**  🔒", expanded=False):
+            with st.expander(
+                f"{p.get('emoji','📁')} **{p['nom']}**  🔒", expanded=False
+            ):
                 st.markdown(f"_{p.get('description', '')}_")
                 st.divider()
 
@@ -591,8 +762,10 @@ elif page == "profils_defaut":
                     with col_lbl:
                         st.markdown(f"**`{cat['label']}`**")
                     with col_dsc:
-                        st.markdown(f"<span style='color:#555'>{cat.get('description','')}</span>",
-                                    unsafe_allow_html=True)
+                        st.markdown(
+                            f"<span style='color:#555'>{cat.get('description','')}</span>",
+                            unsafe_allow_html=True,
+                        )
 
                 st.divider()
 
@@ -602,8 +775,10 @@ elif page == "profils_defaut":
                     with col_lbl:
                         st.markdown(f"**`{urg['label']}`**")
                     with col_dsc:
-                        st.markdown(f"<span style='color:#555'>{urg.get('description','')}</span>",
-                                    unsafe_allow_html=True)
+                        st.markdown(
+                            f"<span style='color:#555'>{urg.get('description','')}</span>",
+                            unsafe_allow_html=True,
+                        )
 
                 st.divider()
 
@@ -624,7 +799,9 @@ elif page == "profils_dupliquer":
     if not default_profiles:
         st.info("Aucun tri par défaut disponible.")
     else:
-        st.info("Choisissez un tri par défaut comme point de départ, donnez-lui un nouveau nom, puis personnalisez-le dans **✏️ Mes tris**.")
+        st.info(
+            "Choisissez un tri par défaut comme point de départ, donnez-lui un nouveau nom, puis personnalisez-le dans **✏️ Mes tris**."
+        )
         st.divider()
 
         default_ids = [p["id"] for p in default_profiles]
@@ -632,7 +809,11 @@ elif page == "profils_dupliquer":
             "Tri source",
             default_ids,
             format_func=lambda pid: next(
-                (f"{p.get('emoji','📁')} {p['nom']}" for p in default_profiles if p["id"] == pid),
+                (
+                    f"{p.get('emoji','📁')} {p['nom']}"
+                    for p in default_profiles
+                    if p["id"] == pid
+                ),
                 pid,
             ),
         )
@@ -651,7 +832,9 @@ elif page == "profils_dupliquer":
                 try:
                     new_p = duplicate_profile(source_id, new_name.strip())
                     _reload_profiles()
-                    st.success(f"✅ Profil **'{new_p['nom']}'** créé ! Rendez-vous dans **✏️ Mes profils** pour le modifier.")
+                    st.success(
+                        f"✅ Profil **'{new_p['nom']}'** créé ! Rendez-vous dans **✏️ Mes profils** pour le modifier."
+                    )
                     st.rerun()
                 except Exception as e:
                     st.error(str(e))
@@ -666,12 +849,18 @@ elif page == "profils_creer":
     with st.form("new_profile"):
         col1, col2 = st.columns([3, 1])
         with col1:
-            nom   = st.text_input("Nom du nouveau tri *", placeholder="ex: Chargé RH")
+            nom = st.text_input("Nom du nouveau tri *", placeholder="ex: Chargé RH")
         with col2:
             emoji = st.text_input("Emoji", value="📁", max_chars=2)
-        desc    = st.text_area("Description", height=80)
-        context = st.text_area("Contexte LLM", height=100, placeholder="Les emails proviennent de...")
-        prompt  = st.text_area("Prompt de base", height=100, placeholder="Tu es un agent spécialisé dans...")
+        desc = st.text_area("Description", height=80)
+        context = st.text_area(
+            "Contexte LLM", height=100, placeholder="Les emails proviennent de..."
+        )
+        prompt = st.text_area(
+            "Prompt de base",
+            height=100,
+            placeholder="Tu es un agent spécialisé dans...",
+        )
 
         st.subheader("Catégories (min. 2)")
         cats = []
@@ -680,12 +869,16 @@ elif page == "profils_creer":
             with c1:
                 lbl = st.text_input(f"Catégorie {j+1}", key=f"new_cat_{j}")
             with c2:
-                dsc = st.text_input("Description", key=f"new_cat_dsc_{j}", label_visibility="collapsed")
+                dsc = st.text_input(
+                    "Description", key=f"new_cat_dsc_{j}", label_visibility="collapsed"
+                )
             if lbl:
                 cats.append({"id": slugify(lbl), "label": lbl, "description": dsc})
 
         st.subheader("Urgences")
-        use_default_urgences = st.checkbox("Utiliser les urgences standard (Critique → Anodine)", value=True)
+        use_default_urgences = st.checkbox(
+            "Utiliser les urgences standard (Critique → Anodine)", value=True
+        )
 
         submitted = st.form_submit_button("✅ Créer le profil", type="primary")
 
@@ -696,21 +889,30 @@ elif page == "profils_creer":
             st.error("Ajoutez au moins 2 catégories.")
         else:
             default_urgences = [
-                {"label": "Critique", "description": "Impact majeur, opération impossible."},
-                {"label": "Élevée",   "description": "Forte gêne, traitement prioritaire."},
-                {"label": "Modérée",  "description": "Gêne notable mais non bloquante."},
-                {"label": "Faible",   "description": "Problème mineur."},
-                {"label": "Anodine",  "description": "Demande simple, aucun enjeu d'urgence."},
+                {
+                    "label": "Critique",
+                    "description": "Impact majeur, opération impossible.",
+                },
+                {
+                    "label": "Élevée",
+                    "description": "Forte gêne, traitement prioritaire.",
+                },
+                {"label": "Modérée", "description": "Gêne notable mais non bloquante."},
+                {"label": "Faible", "description": "Problème mineur."},
+                {
+                    "label": "Anodine",
+                    "description": "Demande simple, aucun enjeu d'urgence.",
+                },
             ]
             new_profile = {
-                "id":          slugify(nom),
-                "nom":         nom,
-                "emoji":       emoji,
+                "id": slugify(nom),
+                "nom": nom,
+                "emoji": emoji,
                 "description": desc,
-                "context":     context,
-                "prompt":      prompt,
-                "categories":  cats,
-                "urgences":    default_urgences if use_default_urgences else [],
+                "context": context,
+                "prompt": prompt,
+                "categories": cats,
+                "urgences": default_urgences if use_default_urgences else [],
             }
             try:
                 save_profile(new_profile)
@@ -727,7 +929,8 @@ elif page == "profils_creer":
 elif page == "mes_profils":
     st.title("✏️ Mes profils")
 
-    st.markdown("""
+    st.markdown(
+        """
     <style>
     details[open] > summary {
         background-color: #fef2f2 !important;
@@ -738,7 +941,9 @@ elif page == "mes_profils":
     details[open] > summary p { color: #b91c1c !important; font-weight: 600; }
     details[open] > summary svg { fill: #ef4444 !important; }
     </style>
-    """, unsafe_allow_html=True)
+    """,
+        unsafe_allow_html=True,
+    )
 
     user_profiles = list_user_profiles()
 
@@ -748,13 +953,15 @@ elif page == "mes_profils":
             "Dupliquez un profil par défaut ou créez-en un depuis les boutons dédiés"
         )
     else:
-        st.caption("Dépliez un profil pour le modifier. La suppression est disponible en bas de chaque fiche.")
+        st.caption(
+            "Dépliez un profil pour le modifier. La suppression est disponible en bas de chaque fiche."
+        )
         st.divider()
 
         for p in user_profiles:
-            pid   = p["id"]
+            pid = p["id"]
             pcats = p.get("categories", [])
-            purgs = p.get("urgences",   [])
+            purgs = p.get("urgences", [])
 
             with st.expander(f"{p.get('emoji','📁')} **{p['nom']}**", expanded=False):
 
@@ -762,16 +969,36 @@ elif page == "mes_profils":
                     st.markdown("**Informations générales**")
                     col1, col2 = st.columns([4, 1])
                     with col1:
-                        new_nom   = st.text_input("Nom", value=p["nom"], key=f"nom_{pid}")
+                        new_nom = st.text_input("Nom", value=p["nom"], key=f"nom_{pid}")
                     with col2:
-                        new_emoji = st.text_input("Emoji", value=p.get("emoji", "📁"), max_chars=2, key=f"emoji_{pid}")
-                    new_desc = st.text_area("Description", value=p.get("description", ""), height=68, key=f"desc_{pid}")
+                        new_emoji = st.text_input(
+                            "Emoji",
+                            value=p.get("emoji", "📁"),
+                            max_chars=2,
+                            key=f"emoji_{pid}",
+                        )
+                    new_desc = st.text_area(
+                        "Description",
+                        value=p.get("description", ""),
+                        height=68,
+                        key=f"desc_{pid}",
+                    )
 
                     st.divider()
 
                     st.markdown("**📝 Contexte & Prompt LLM**")
-                    new_context = st.text_area("Contexte",       value=p.get("context", ""), height=110, key=f"ctx_{pid}")
-                    new_prompt  = st.text_area("Prompt de base", value=p.get("prompt",  ""), height=110, key=f"prompt_{pid}")
+                    new_context = st.text_area(
+                        "Contexte",
+                        value=p.get("context", ""),
+                        height=110,
+                        key=f"ctx_{pid}",
+                    )
+                    new_prompt = st.text_area(
+                        "Prompt de base",
+                        value=p.get("prompt", ""),
+                        height=110,
+                        key=f"prompt_{pid}",
+                    )
 
                     st.divider()
 
@@ -780,22 +1007,55 @@ elif page == "mes_profils":
                     for j, cat in enumerate(pcats):
                         c1, c2, c3 = st.columns([2, 3, 0.7])
                         with c1:
-                            lbl  = st.text_input("Label",       value=cat["label"],                key=f"cat_lbl_{pid}_{j}", label_visibility="collapsed")
+                            lbl = st.text_input(
+                                "Label",
+                                value=cat["label"],
+                                key=f"cat_lbl_{pid}_{j}",
+                                label_visibility="collapsed",
+                            )
                         with c2:
-                            dsc  = st.text_input("Description", value=cat.get("description", ""), key=f"cat_dsc_{pid}_{j}", label_visibility="collapsed")
+                            dsc = st.text_input(
+                                "Description",
+                                value=cat.get("description", ""),
+                                key=f"cat_dsc_{pid}_{j}",
+                                label_visibility="collapsed",
+                            )
                         with c3:
-                            keep = st.checkbox("✓", value=True, key=f"cat_keep_{pid}_{j}", help="Décocher pour supprimer")
+                            keep = st.checkbox(
+                                "✓",
+                                value=True,
+                                key=f"cat_keep_{pid}_{j}",
+                                help="Décocher pour supprimer",
+                            )
                         if keep and lbl:
-                            new_cats.append({"id": slugify(lbl), "label": lbl, "description": dsc})
+                            new_cats.append(
+                                {"id": slugify(lbl), "label": lbl, "description": dsc}
+                            )
 
                     st.caption("Nouvelle catégorie")
                     na1, na2 = st.columns([2, 3])
                     with na1:
-                        add_lbl = st.text_input("Label",       key=f"add_cat_lbl_{pid}", placeholder="Label...",       label_visibility="collapsed")
+                        add_lbl = st.text_input(
+                            "Label",
+                            key=f"add_cat_lbl_{pid}",
+                            placeholder="Label...",
+                            label_visibility="collapsed",
+                        )
                     with na2:
-                        add_dsc = st.text_input("Description", key=f"add_cat_dsc_{pid}", placeholder="Description...", label_visibility="collapsed")
+                        add_dsc = st.text_input(
+                            "Description",
+                            key=f"add_cat_dsc_{pid}",
+                            placeholder="Description...",
+                            label_visibility="collapsed",
+                        )
                     if add_lbl:
-                        new_cats.append({"id": slugify(add_lbl), "label": add_lbl, "description": add_dsc})
+                        new_cats.append(
+                            {
+                                "id": slugify(add_lbl),
+                                "label": add_lbl,
+                                "description": add_dsc,
+                            }
+                        )
 
                     st.divider()
 
@@ -804,20 +1064,39 @@ elif page == "mes_profils":
                     for k, urg in enumerate(purgs):
                         u1, u2 = st.columns([1, 3])
                         with u1:
-                            ulbl = st.text_input("Niveau",      value=urg["label"],                key=f"urg_lbl_{pid}_{k}", label_visibility="collapsed")
+                            ulbl = st.text_input(
+                                "Niveau",
+                                value=urg["label"],
+                                key=f"urg_lbl_{pid}_{k}",
+                                label_visibility="collapsed",
+                            )
                         with u2:
-                            udsc = st.text_input("Description", value=urg.get("description", ""), key=f"urg_dsc_{pid}_{k}", label_visibility="collapsed")
+                            udsc = st.text_input(
+                                "Description",
+                                value=urg.get("description", ""),
+                                key=f"urg_dsc_{pid}_{k}",
+                                label_visibility="collapsed",
+                            )
                         if ulbl:
                             new_urgences.append({"label": ulbl, "description": udsc})
 
                     st.divider()
-                    saved = st.form_submit_button("💾 Enregistrer les modifications", type="primary", use_container_width=True)
+                    saved = st.form_submit_button(
+                        "💾 Enregistrer les modifications",
+                        type="primary",
+                        use_container_width=True,
+                    )
 
                 if saved:
                     updated = {
-                        "id": pid, "nom": new_nom, "emoji": new_emoji, "description": new_desc,
-                        "context": new_context, "prompt": new_prompt,
-                        "categories": new_cats, "urgences": new_urgences,
+                        "id": pid,
+                        "nom": new_nom,
+                        "emoji": new_emoji,
+                        "description": new_desc,
+                        "context": new_context,
+                        "prompt": new_prompt,
+                        "categories": new_cats,
+                        "urgences": new_urgences,
                     }
                     try:
                         save_profile(updated)
@@ -827,10 +1106,16 @@ elif page == "mes_profils":
                     except PermissionError as e:
                         st.error(str(e))
 
-                st.markdown("<div style='margin-top: 8px'></div>", unsafe_allow_html=True)
+                st.markdown(
+                    "<div style='margin-top: 8px'></div>", unsafe_allow_html=True
+                )
                 col_spacer, col_del = st.columns([3, 1])
                 with col_del:
-                    if st.button("🗑️ Supprimer ce profil", key=f"del_{pid}", use_container_width=True):
+                    if st.button(
+                        "🗑️ Supprimer ce profil",
+                        key=f"del_{pid}",
+                        use_container_width=True,
+                    ):
                         try:
                             delete_profile(pid)
                             _reload_profiles()
@@ -841,71 +1126,22 @@ elif page == "mes_profils":
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# PAGE — API
-# ═════════════════════════════════════════════════════════════════════════════
-elif page == "admin_api":
-    st.title("🔑 API")
-    st.caption("Ces valeurs sont sauvegardées dans votre fichier `.env`.")
-
-    with st.form("env_form"):
-        groq_key = st.text_input(
-            "Clé API Groq (GROQ_KEY)",
-            value=os.getenv("GROQ_KEY", ""),
-            type="password",
-            help="Obtenir sur console.groq.com/keys",
-        )
-        save_env = st.form_submit_button("💾 Sauvegarder", type="primary")
-
-    if save_env:
-        if not ENV_FILE.exists():
-            ENV_FILE.touch()
-        if groq_key:
-            set_key(str(ENV_FILE), "GROQ_KEY", groq_key)
-        st.success("✅ Variables sauvegardées dans .env")
-        st.rerun()
-
-
-# ═════════════════════════════════════════════════════════════════════════════
 # PAGE — Connexion mail
 # ═════════════════════════════════════════════════════════════════════════════
 elif page == "admin_mail":
-    st.title("📬 Connexion mail")
+    st.title("📧 Compte connecté")
 
-    current_provider = os.getenv("MAIL_PROVIDER", "gmail")
+    tab_compte, tab_changer = st.tabs(["📧 Compte connecté", "🔄 Changer de compte mail"])
 
-    provider = st.radio(
-        "Choisir le provider",
-        ["gmail", "imap"],
-        index=0 if current_provider == "gmail" else 1,
-        horizontal=True,
-        format_func=lambda x: "📧 Gmail (OAuth2)" if x == "gmail" else "📬 IMAP (Thunderbird, Outlook...)",
-    )
-
-    # Sauvegarde silencieuse si changement, sans rerun
-    if provider != current_provider:
-        if not ENV_FILE.exists():
-            ENV_FILE.touch()
-        set_key(str(ENV_FILE), "MAIL_PROVIDER", provider)
-        os.environ["MAIL_PROVIDER"] = provider
-
-    if provider == "gmail":
-        st.divider()
-        st.markdown("**📧 Compte connecté**")
-        if not Path("token.json").exists():
-            st.warning("⚠️ Aucun token trouvé — lancez `python3 generate_token.py` pour vous connecter.")
-        else:
+    # ── Onglet 1 : Compte connecté ────────────────────────────────────────────
+    with tab_compte:
+        current_provider = os.getenv("MAIL_PROVIDER", "gmail")
+        if current_provider == "gmail":
             try:
-                from google.oauth2.credentials import Credentials as _GCreds
-                from google.auth.transport.requests import Request as _GRequest
-                from googleapiclient.discovery import build as _gbuild
-
-                _creds = _GCreds.from_authorized_user_file("token.json")
-                if _creds.expired and _creds.refresh_token:
-                    _creds.refresh(_GRequest())
-                _svc      = _gbuild("gmail", "v1", credentials=_creds)
-                _profile  = _svc.users().getProfile(userId="me").execute()
-                _email    = _profile.get("emailAddress", "inconnu")
-                _n_msgs   = _profile.get("messagesTotal", "?")
+                _svc       = _build_gmail_service_from_sso()
+                _profile   = _svc.users().getProfile(userId="me").execute()
+                _email     = _profile.get("emailAddress", "inconnu")
+                _n_msgs    = _profile.get("messagesTotal", "?")
                 _n_threads = _profile.get("threadsTotal", "?")
 
                 st.success(f"✅ Connecté en tant que **{_email}**")
@@ -916,42 +1152,70 @@ elif page == "admin_mail":
                     st.metric("Fils de discussion", f"{_n_threads:,}" if isinstance(_n_threads, int) else _n_threads)
             except Exception as e:
                 st.error(f"❌ Impossible de lire le compte : {e}")
+        else:
+            imap_user = os.getenv("IMAP_USER", "")
+            imap_host = os.getenv("IMAP_HOST", "")
+            if imap_user and imap_host:
+                st.success(f"✅ Connecté via IMAP : **{imap_user}** @ {imap_host}")
+            else:
+                st.warning("⚠️ Aucun compte IMAP configuré.")
 
-    else:
-        st.subheader("Configuration IMAP")
-        with st.form("imap_form"):
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                imap_host = st.text_input("Hôte IMAP", value=os.getenv("IMAP_HOST", ""), placeholder="imap.gmail.com")
-            with col2:
-                imap_port = st.text_input("Port", value=os.getenv("IMAP_PORT", "993"))
-            imap_user   = st.text_input("Email",        value=os.getenv("IMAP_USER",     ""))
-            imap_pass   = st.text_input("Mot de passe", value=os.getenv("IMAP_PASSWORD", ""), type="password")
-            imap_folder = st.text_input("Dossier",      value=os.getenv("IMAP_FOLDER",   "INBOX"))
-            imap_ssl    = st.checkbox("SSL", value=os.getenv("IMAP_USE_SSL", "true") == "true")
-            save_imap   = st.form_submit_button("💾 Sauvegarder la config IMAP", type="primary")
+    # ── Onglet 2 : Changer de compte ─────────────────────────────────────────
+    with tab_changer:
+        new_provider = st.radio(
+            "Choisir le type de compte mail",
+            [None, "gmail", "imap"],
+            index=0,
+            format_func=lambda x: "— Sélectionner —" if x is None else (
+                "📧 Gmail (OAuth2)" if x == "gmail" else "📬 IMAP (Thunderbird, Outlook...)"
+            ),
+            horizontal=True,
+        )
 
-        if save_imap:
+        if new_provider == "gmail":
+            # Déconnecte le SSO → renvoie vers la page de connexion Google
+            st.session_state["sso_token"] = None
+            st.session_state["sso_user"] = None
             if not ENV_FILE.exists():
                 ENV_FILE.touch()
-            set_key(str(ENV_FILE), "IMAP_HOST",     imap_host)
-            set_key(str(ENV_FILE), "IMAP_PORT",     str(imap_port))
-            set_key(str(ENV_FILE), "IMAP_USER",     imap_user)
-            set_key(str(ENV_FILE), "IMAP_PASSWORD", imap_pass)
-            set_key(str(ENV_FILE), "IMAP_FOLDER",   imap_folder)
-            set_key(str(ENV_FILE), "IMAP_USE_SSL",  "true" if imap_ssl else "false")
-            set_key(str(ENV_FILE), "MAIL_PROVIDER", "imap")
-            os.environ["MAIL_PROVIDER"] = "imap"
-            st.success("✅ Config IMAP sauvegardée.")
+            set_key(str(ENV_FILE), "MAIL_PROVIDER", "gmail")
+            os.environ["MAIL_PROVIDER"] = "gmail"
+            st.rerun()
 
-        st.divider()
-        st.markdown("**Hôtes IMAP courants**")
-        st.table({
-            "Service":   ["Gmail", "Outlook", "Yahoo", "OVH"],
-            "IMAP_HOST": ["imap.gmail.com", "outlook.office365.com", "imap.mail.yahoo.com", "ssl0.ovh.net"],
-            "Port":      ["993", "993", "993", "993"],
-        })
+        elif new_provider == "imap":
+            st.divider()
+            with st.form("imap_form"):
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    imap_host = st.text_input("Hôte IMAP", value=os.getenv("IMAP_HOST", ""), placeholder="imap.gmail.com")
+                with col2:
+                    imap_port = st.text_input("Port", value=os.getenv("IMAP_PORT", "993"))
+                imap_user   = st.text_input("Email",        value=os.getenv("IMAP_USER",     ""))
+                imap_pass   = st.text_input("Mot de passe", value=os.getenv("IMAP_PASSWORD", ""), type="password")
+                imap_folder = st.text_input("Dossier",      value=os.getenv("IMAP_FOLDER",   "INBOX"))
+                imap_ssl    = st.checkbox("SSL", value=os.getenv("IMAP_USE_SSL", "true") == "true")
+                save_imap   = st.form_submit_button("💾 Sauvegarder la config IMAP", type="primary")
 
+            if save_imap:
+                if not ENV_FILE.exists():
+                    ENV_FILE.touch()
+                set_key(str(ENV_FILE), "IMAP_HOST",     imap_host)
+                set_key(str(ENV_FILE), "IMAP_PORT",     str(imap_port))
+                set_key(str(ENV_FILE), "IMAP_USER",     imap_user)
+                set_key(str(ENV_FILE), "IMAP_PASSWORD", imap_pass)
+                set_key(str(ENV_FILE), "IMAP_FOLDER",   imap_folder)
+                set_key(str(ENV_FILE), "IMAP_USE_SSL",  "true" if imap_ssl else "false")
+                set_key(str(ENV_FILE), "MAIL_PROVIDER", "imap")
+                os.environ["MAIL_PROVIDER"] = "imap"
+                st.success("✅ Config IMAP sauvegardée.")
+
+            st.divider()
+            st.markdown("**Hôtes IMAP courants**")
+            st.table({
+                "Service":   ["Gmail", "Outlook", "Yahoo", "OVH"],
+                "IMAP_HOST": ["imap.gmail.com", "outlook.office365.com", "imap.mail.yahoo.com", "ssl0.ovh.net"],
+                "Port":      ["993", "993", "993", "993"],
+            })
 
 # ═════════════════════════════════════════════════════════════════════════════
 # PAGE — Diagnostic
@@ -966,71 +1230,66 @@ elif page == "admin_diag":
     if st.session_state.get("run_diag"):
         st.divider()
 
-        # 1. Fichiers
         st.subheader("📁 Fichiers")
         col1, col2 = st.columns(2)
         with col1:
-            st.metric("credentials.json", "✅ Présent" if Path("credentials.json").exists() else "❌ Absent")
+            st.metric(
+                "credentials.json",
+                "✅ Présent" if Path("credentials.json").exists() else "❌ Absent",
+            )
         with col2:
-            st.metric("token.json", "✅ Présent" if Path("token.json").exists() else "❌ Absent")
+            st.metric(
+                "SSO Google",
+                "✅ Connecté" if st.session_state.sso_token else "❌ Non connecté",
+            )
 
         st.divider()
 
-        # 2. Variables d'environnement
         st.subheader("⚙️ Variables d'environnement")
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("GROQ_KEY", "✅ Définie" if os.getenv("GROQ_KEY") else "❌ Manquante")
-        with col2:
-            st.metric("MAIL_PROVIDER", os.getenv("MAIL_PROVIDER", "gmail").upper())
+        st.metric("MAIL_PROVIDER", os.getenv("MAIL_PROVIDER", "gmail").upper())
 
         st.divider()
 
-        # 3. API Groq
         st.subheader("🤖 API Groq")
         groq_key = os.getenv("GROQ_KEY", "")
         if not groq_key:
-            st.error("❌ Clé Groq non configurée.")
+            st.error("❌ Clé Groq non configurée côté serveur.")
         else:
             with st.spinner("Test Groq..."):
                 try:
                     from groq import Groq
+
                     _client = Groq(api_key=groq_key)
                     _client.chat.completions.create(
                         messages=[{"role": "user", "content": "OK"}],
                         model="llama-3.3-70b-versatile",
                         max_tokens=5,
                     )
-                    st.success("✅ Groq opérationnel — modèle : `llama-3.3-70b-versatile`")
+                    st.success(
+                        "✅ Groq opérationnel — modèle : `llama-3.3-70b-versatile`"
+                    )
                 except Exception as e:
                     st.error(f"❌ Groq inaccessible : {e}")
 
         st.divider()
 
-        # 4. Compte Gmail
         st.subheader("📧 Compte Gmail")
-        if not Path("token.json").exists():
-            st.warning("⚠️ token.json absent — lancez `generate_token.py`.")
-        else:
-            with st.spinner("Connexion Gmail..."):
-                try:
-                    from google.oauth2.credentials import Credentials as _GCreds
-                    from google.auth.transport.requests import Request as _GRequest
-                    from googleapiclient.discovery import build as _gbuild
-                    _creds = _GCreds.from_authorized_user_file("token.json")
-                    if _creds.expired and _creds.refresh_token:
-                        _creds.refresh(_GRequest())
-                    _svc     = _gbuild("gmail", "v1", credentials=_creds)
-                    _profile = _svc.users().getProfile(userId="me").execute()
-                    _email   = _profile.get("emailAddress", "inconnu")
-                    _n_msgs  = _profile.get("messagesTotal", "?")
-                    st.success(f"✅ Connecté : **{_email}** ({_n_msgs:,} messages)" if isinstance(_n_msgs, int) else f"✅ Connecté : **{_email}**")
-                except Exception as e:
-                    st.error(f"❌ Gmail inaccessible : {e}")
+        with st.spinner("Connexion Gmail..."):
+            try:
+                _svc = _build_gmail_service_from_sso()
+                _profile = _svc.users().getProfile(userId="me").execute()
+                _email = _profile.get("emailAddress", "inconnu")
+                _n_msgs = _profile.get("messagesTotal", "?")
+                st.success(
+                    f"✅ Connecté : **{_email}** ({_n_msgs:,} messages)"
+                    if isinstance(_n_msgs, int)
+                    else f"✅ Connecté : **{_email}**"
+                )
+            except Exception as e:
+                st.error(f"❌ Gmail inaccessible : {e}")
 
         st.divider()
 
-        # 5. IMAP (si configuré)
         if os.getenv("MAIL_PROVIDER", "gmail") == "imap":
             st.subheader("📬 Connexion IMAP")
             imap_host = os.getenv("IMAP_HOST", "")
@@ -1042,9 +1301,14 @@ elif page == "admin_diag":
                 with st.spinner(f"Connexion IMAP à {imap_host}..."):
                     try:
                         import imaplib
-                        _port    = int(os.getenv("IMAP_PORT", 993))
+
+                        _port = int(os.getenv("IMAP_PORT", 993))
                         _use_ssl = os.getenv("IMAP_USE_SSL", "true").lower() != "false"
-                        _conn = imaplib.IMAP4_SSL(imap_host, _port) if _use_ssl else imaplib.IMAP4(imap_host, _port)
+                        _conn = (
+                            imaplib.IMAP4_SSL(imap_host, _port)
+                            if _use_ssl
+                            else imaplib.IMAP4(imap_host, _port)
+                        )
                         _conn.login(imap_user, imap_pass)
                         _conn.logout()
                         st.success(f"✅ IMAP connecté : **{imap_user}** @ {imap_host}")
@@ -1053,19 +1317,22 @@ elif page == "admin_diag":
 
         st.divider()
 
-        # 7. Profils
         st.subheader("🗂️ Profils chargés")
         _all_profiles = _get_profiles()
         _defaults = [p for p in _all_profiles if p.get("_is_default")]
-        _users    = [p for p in _all_profiles if not p.get("_is_default")]
+        _users = [p for p in _all_profiles if not p.get("_is_default")]
         col1, col2 = st.columns(2)
         with col1:
             st.metric("Profils par défaut", len(_defaults))
         with col2:
             st.metric("Profils personnalisés", len(_users))
         for p in _all_profiles:
-            lock  = " 🔒" if p.get("_is_default") else ""
-            actif = " ← **actif**" if active_profile and p.get("id") == active_profile.get("id") else ""
+            lock = " 🔒" if p.get("_is_default") else ""
+            actif = (
+                " ← **actif**"
+                if active_profile and p.get("id") == active_profile.get("id")
+                else ""
+            )
             st.caption(f"{p.get('emoji','📁')} {p['nom']}{lock}{actif}")
 
 
@@ -1079,7 +1346,8 @@ elif page == "roadmap":
     st.divider()
 
     st.subheader("Support multi-utilisateurs")
-    st.markdown("""
+    st.markdown(
+        """
 L'architecture actuelle est pensée pour un usage **mono-utilisateur** (une machine, un compte Google).
 
 Pour permettre à plusieurs utilisateurs d'utiliser l'application indépendamment, il faudrait :
@@ -1089,12 +1357,14 @@ Pour permettre à plusieurs utilisateurs d'utiliser l'application indépendammen
 - **Isoler les configurations par utilisateur** — clé Groq, Google Sheet ID, profils actifs, chacun dans son propre espace.
 
 En attendant, la solution la plus simple pour partager l'app est d'ajouter l'email de chaque utilisateur comme testeur dans la [Google Cloud Console](https://console.cloud.google.com).
-    """)
+    """
+    )
 
     st.divider()
 
     st.subheader("Nouveau tri par défaut : Facturation")
-    st.markdown("""
+    st.markdown(
+        """
 Un nouveau profil **Facturation** est prévu pour lire et trier automatiquement les emails contenant des factures.
 
 **Catégories prévues :**
@@ -1103,40 +1373,40 @@ Un nouveau profil **Facturation** est prévu pour lire et trier automatiquement 
 - `Relance paiement` — relance pour impayé, demande de régularisation
 - `Avoir / Remboursement` — avoir commercial, note de crédit, remboursement
 - `Abonnement / Récurrent` — renouvellement automatique, SaaS, abonnement mensuel
-- ...
-
-
-    """)
+    """
+    )
 
     st.divider()
 
     st.subheader("Ajout de la suppression avec une connexion IMAP")
-    st.markdown("""
-Actuellement l'application place dans la corbeil Gmail les éléments supprimés depuis le visualisateur, nous travaillons sur une fonctionnalité similaire avec les connexions IMAP
-
-
-    """)
+    st.markdown(
+        """
+Actuellement l'application place dans la corbeille Gmail les éléments supprimés depuis le visualisateur, nous travaillons sur une fonctionnalité similaire avec les connexions IMAP.
+    """
+    )
 
     st.divider()
 
-    st.subheader("Création d'un google sheet pour les connexions avec compte Google")
-    st.markdown("""
-Pour les connexions avec un compte Gmail, il sera possible de créer un google sheet pour les réusltats de l'analyse automatiquement. L'export en CSV manuel restera disponiible.
-
-
-    """)
+    st.subheader("Création d'un Google Sheet pour les connexions avec compte Google")
+    st.markdown(
+        """
+Pour les connexions avec un compte Gmail, il sera possible de créer un Google Sheet pour les résultats de l'analyse automatiquement. L'export en CSV manuel restera disponible.
+    """
+    )
 
     st.divider()
 
     st.subheader("Modifications de nommage et d'organisation du menu")
-    st.markdown("""
-- onglet API
+    st.markdown(
+        """
+- Onglet API
 - Détail du diagnostic
-- Partie "Principal" du sidebar, changement dénomination
+- Partie "Principal" du sidebar, changement de dénomination
 - ...
-
-
-    """)
+    """
+    )
 
     st.divider()
-    st.info("💡 D'autres idées ? N'hésitez pas à contribuer sur le dépôt GitHub ou simplement contacter les créateurs : Kémil Lamouri et Mathias Segura.")
+    st.info(
+        "💡 D'autres idées ? N'hésitez pas à contribuer sur le dépôt GitHub ou simplement contacter les créateurs : Kémil Lamouri et Mathias Segura."
+    )
