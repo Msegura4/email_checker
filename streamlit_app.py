@@ -497,10 +497,40 @@ if page == "lancer":
                 _check_timeout("Connexion provider mail")
                 with reader:
                     add_log(f"[INFO] Récupération des emails (max {max_emails})...")
-                    tickets = reader.fetch_unread_emails(
-                        max_results=max_emails, mark_as_read=False
-                    )
-                    _check_timeout("Récupération emails")
+
+                    # Fetch dans un thread avec timeout de 30s
+                    import threading
+                    _result_holder = {"tickets": None, "error": None}
+                    def _fetch():
+                        try:
+                            _result_holder["tickets"] = reader.fetch_unread_emails(
+                                max_results=max_emails, mark_as_read=False
+                            )
+                        except Exception as e:
+                            _result_holder["error"] = e
+
+                    _thread = threading.Thread(target=_fetch)
+                    _thread.start()
+                    _waited = 0
+                    while _thread.is_alive():
+                        time.sleep(1)
+                        _waited += 1
+                        add_log(f"[INFO] Récupération en cours... ({_waited}s)")
+                        if _waited >= 30:
+                            add_log("\n⏰ TIMEOUT — fetch_unread_emails bloqué après 30s")
+                            add_log("📋 RAPPORT :")
+                            add_log(f"  • Provider : {provider.upper()}")
+                            add_log("  • Cause probable : token SSO expiré ou sans scope Gmail")
+                            add_log("  • Solution : déconnectez-vous et reconnectez-vous via Google")
+                            st.error("⏰ Timeout récupération emails. Reconnectez-vous via Google.")
+                            st.stop()
+
+                    if _result_holder["error"]:
+                        add_log(f"❌ Erreur fetch : {_result_holder['error']}")
+                        st.error(f"Erreur récupération emails : {_result_holder['error']}")
+                        st.stop()
+
+                    tickets = _result_holder["tickets"] or []
                     add_log(f"[INFO] {len(tickets)} emails récupérés.")
 
                     if not tickets:
