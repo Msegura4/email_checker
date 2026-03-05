@@ -412,21 +412,57 @@ if page == "lancer":
 
                 provider = os.getenv("MAIL_PROVIDER", "gmail").lower()
                 if provider == "gmail":
-                    from mail_reader_gmail import GmailReader as MailReader
-                    # Injecter le token SSO dans token.json temporairement
-                    import json as _json
-                    _token_data = {
-                        "token": st.session_state.sso_token["access_token"],
-                        "refresh_token": st.session_state.sso_token.get("refresh_token", ""),
-                        "token_uri": TOKEN_URL,
-                        "client_id": CLIENT_ID,
-                        "client_secret": CLIENT_SECRET,
-                        "scopes": [
-                            "https://www.googleapis.com/auth/gmail.readonly",
-                            "https://www.googleapis.com/auth/gmail.modify",
-                        ],
-                    }
-                    Path("token.json").write_text(_json.dumps(_token_data), encoding="utf-8")
+                    from mail_reader_gmail import GmailReader
+                    from mail_reader_base import BaseMailReader
+
+                    # Reader Gmail utilisant directement le service SSO — sans token.json
+                    class GmailReaderSSO(BaseMailReader):
+                        def __init__(self, service):
+                            self.service = service
+
+                        def fetch_unread_emails(self, max_results=500, mark_as_read=False):
+                            tickets, page_token, fetched = [], None, 0
+                            while fetched < max_results:
+                                batch_size = min(100, max_results - fetched)
+                                params = {"userId": "me", "q": "is:unread",
+                                          "maxResults": batch_size, "labelIds": ["INBOX"]}
+                                if page_token:
+                                    params["pageToken"] = page_token
+                                resp = self.service.users().messages().list(**params).execute()
+                                messages = resp.get("messages", [])
+                                if not messages:
+                                    break
+                                for msg_ref in messages:
+                                    mid = msg_ref["id"]
+                                    try:
+                                        msg = self.service.users().messages().get(
+                                            userId="me", id=mid, format="full").execute()
+                                        headers = msg.get("payload", {}).get("headers", [])
+                                        sujet = next(
+                                            (h["value"] for h in headers if h["name"].lower() == "subject"),
+                                            "(Sans sujet)")
+                                        corps = GmailReader._extract_body(msg.get("payload", {}))
+                                        tickets.append({"id": mid, "sujet": sujet, "corps": corps})
+                                        if mark_as_read:
+                                            self.mark_as_read(mid)
+                                        fetched += 1
+                                    except Exception:
+                                        continue
+                                page_token = resp.get("nextPageToken")
+                                if not page_token:
+                                    break
+                            return tickets
+
+                        def mark_as_read(self, mail_id):
+                            self.service.users().messages().modify(
+                                userId="me", id=mail_id,
+                                body={"removeLabelIds": ["UNREAD"]}).execute()
+
+                        def close(self):
+                            pass
+
+                    sso_service = _build_gmail_service_from_sso()
+                    MailReader = lambda: GmailReaderSSO(sso_service)
                 else:
                     from mail_reader_imap import IMAPReader as MailReader
 
