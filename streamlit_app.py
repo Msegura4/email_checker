@@ -93,17 +93,38 @@ def _get_user_info(token: dict):
 
 
 def _build_gmail_service_from_sso():
-    """Construit un service Gmail depuis le token SSO de la session courante."""
     from google.oauth2.credentials import Credentials as _GCreds
+    from google.auth.transport.requests import Request as _GRequest
     from googleapiclient.discovery import build as _gbuild
     token = st.session_state.sso_token
     creds = _GCreds(
-        token=token["access_token"],
+        token=token.get("access_token"),
+        refresh_token=token.get("refresh_token"),
         client_id=CLIENT_ID,
         client_secret=CLIENT_SECRET,
         token_uri=TOKEN_URL,
+        scopes=[
+            "https://www.googleapis.com/auth/gmail.readonly",
+            "https://www.googleapis.com/auth/gmail.modify",
+        ],
     )
+    if not creds.valid and creds.refresh_token:
+        try:
+            creds.refresh(_GRequest())
+            st.session_state.sso_token["access_token"] = creds.token
+        except Exception:
+            pass
     return _gbuild("gmail", "v1", credentials=creds)
+
+
+def _debug_sso_token():
+    token = st.session_state.sso_token or {}
+    return {
+        "has_access_token":  bool(token.get("access_token")),
+        "has_refresh_token": bool(token.get("refresh_token")),
+        "scopes":            token.get("scope", "non défini"),
+        "token_type":        token.get("token_type", "?"),
+    }
 
 
 def _check_sso() -> bool:
@@ -482,6 +503,11 @@ if page == "lancer":
 
                 add_log(f"[INFO] Profil : {active_profile['nom']}")
                 add_log(f"[INFO] Provider : {provider.upper()}")
+                if provider == "gmail":
+                    _dbg = _debug_sso_token()
+                    add_log(f"[DEBUG] access_token : {'✅' if _dbg['has_access_token'] else '❌'}")
+                    add_log(f"[DEBUG] refresh_token : {'✅' if _dbg['has_refresh_token'] else '❌'}")
+                    add_log(f"[DEBUG] scopes : {_dbg['scopes']}")
                 add_log("[INFO] Connexion au provider mail...")
 
                 category_to_sheet = get_category_to_sheet(active_profile)
