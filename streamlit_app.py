@@ -399,10 +399,24 @@ if page == "lancer":
         )
 
         logs = []
+        _start_time = time.time()
 
         def add_log(msg):
             logs.append(msg)
-            log_area.code("\n".join(logs), language=None)
+            elapsed = time.time() - _start_time
+            log_area.code("\n".join(logs) + f"\n\n⏱️ Temps écoulé : {elapsed:.1f}s", language=None)
+
+        def _check_timeout(step_name, timeout=30):
+            elapsed = time.time() - _start_time
+            if elapsed > timeout:
+                add_log(f"\n⏰ TIMEOUT après {elapsed:.1f}s — bloqué à : {step_name}")
+                add_log("\n📋 RAPPORT :")
+                add_log(f"  • Provider : {os.getenv('MAIL_PROVIDER', 'gmail').upper()}")
+                add_log(f"  • Dernière étape : {step_name}")
+                add_log(f"  • Durée : {elapsed:.1f}s")
+                add_log("  • Cause probable : token SSO expiré, rate limit Gmail, ou connexion lente")
+                st.error(f"⏰ Timeout après {elapsed:.1f}s à l'étape : {step_name}")
+                st.stop()
 
         try:
                 from agent_mail import classify_mail
@@ -472,6 +486,7 @@ if page == "lancer":
 
                 category_to_sheet = get_category_to_sheet(active_profile)
 
+                _check_timeout("Initialisation reader")
                 try:
                     reader = MailReader()
                 except Exception as e:
@@ -479,11 +494,13 @@ if page == "lancer":
                     st.error(f"Erreur connexion mail : {e}")
                     st.stop()
 
+                _check_timeout("Connexion provider mail")
                 with reader:
                     add_log(f"[INFO] Récupération des emails (max {max_emails})...")
                     tickets = reader.fetch_unread_emails(
                         max_results=max_emails, mark_as_read=False
                     )
+                    _check_timeout("Récupération emails")
                     add_log(f"[INFO] {len(tickets)} emails récupérés.")
 
                     if not tickets:
@@ -500,6 +517,7 @@ if page == "lancer":
                         mail_id = ticket.get("id")
                         add_log(f"[{i}/{len(tickets)}] {sujet[:60]}...")
 
+                        _check_timeout(f"Classification email {i}/{len(tickets)}")
                         try:
                             result = classify_mail(f"Sujet : {sujet}\n\n{corps}")
                             categorie = result.get("categorie", "")
