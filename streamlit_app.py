@@ -580,7 +580,6 @@ if page == "lancer":
                         mail_id = ticket.get("id")
                         add_log(f"[{i}/{len(tickets)}] {sujet[:60]}...")
 
-                        _check_timeout(f"Classification email {i}/{len(tickets)}")
                         try:
                             # Retry automatique si rate limit Groq
                             for _attempt in range(3):
