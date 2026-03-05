@@ -176,7 +176,17 @@ def _check_sso() -> bool:
         if "show_imap_login" not in st.session_state:
             st.session_state.show_imap_login = False
 
-        if st.button("📬 Connexion avec IMAP", use_container_width=True, key="btn_imap_login"):
+        st.markdown("""
+        <style>
+        div[data-testid="stButton"] button[kind="secondary"] {
+            height: 60px !important;
+            font-size: 1.1rem !important;
+            font-weight: 600 !important;
+            border-radius: 8px !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        if st.button("📬 Se connecter avec un autre compte mail (IMAP)", use_container_width=True, key="btn_imap_login"):
             st.session_state.show_imap_login = not st.session_state.show_imap_login
             st.rerun()
 
