@@ -170,6 +170,63 @@ def _check_sso() -> bool:
             st.session_state.sso_user = _get_user_info(result["token"])
             st.rerun()
 
+        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+
+        # Bouton IMAP qui déplie un formulaire
+        if "show_imap_login" not in st.session_state:
+            st.session_state.show_imap_login = False
+
+        if st.button("📬 Connexion avec IMAP", use_container_width=True, key="btn_imap_login"):
+            st.session_state.show_imap_login = not st.session_state.show_imap_login
+            st.rerun()
+
+        if st.session_state.show_imap_login:
+            st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
+            with st.form("imap_login_form"):
+                imap_host = st.text_input("Hôte IMAP", placeholder="imap.gmail.com")
+                imap_port = st.text_input("Port", value="993")
+                imap_user = st.text_input("Email", placeholder="vous@email.com")
+                imap_pass = st.text_input("Mot de passe", type="password")
+                imap_folder = st.text_input("Dossier", value="INBOX")
+                imap_ssl = st.checkbox("SSL", value=True)
+                submitted = st.form_submit_button("✅ Se connecter", type="primary", use_container_width=True)
+
+            if submitted:
+                if not all([imap_host, imap_user, imap_pass]):
+                    st.error("Hôte, email et mot de passe sont requis.")
+                else:
+                    try:
+                        import imaplib as _imap
+                        _port = int(imap_port or 993)
+                        _conn = _imap.IMAP4_SSL(imap_host, _port) if imap_ssl else _imap.IMAP4(imap_host, _port)
+                        _conn.login(imap_user, imap_pass)
+                        _conn.logout()
+                        # Stocker config IMAP en session
+                        from dotenv import set_key as _sk
+                        if not ENV_FILE.exists():
+                            ENV_FILE.touch()
+                        _sk(str(ENV_FILE), "IMAP_HOST",     imap_host)
+                        _sk(str(ENV_FILE), "IMAP_PORT",     str(imap_port))
+                        _sk(str(ENV_FILE), "IMAP_USER",     imap_user)
+                        _sk(str(ENV_FILE), "IMAP_PASSWORD", imap_pass)
+                        _sk(str(ENV_FILE), "IMAP_FOLDER",   imap_folder)
+                        _sk(str(ENV_FILE), "IMAP_USE_SSL",  "true" if imap_ssl else "false")
+                        _sk(str(ENV_FILE), "MAIL_PROVIDER", "imap")
+                        os.environ["IMAP_HOST"]     = imap_host
+                        os.environ["IMAP_PORT"]     = str(imap_port)
+                        os.environ["IMAP_USER"]     = imap_user
+                        os.environ["IMAP_PASSWORD"] = imap_pass
+                        os.environ["IMAP_FOLDER"]   = imap_folder
+                        os.environ["IMAP_USE_SSL"]  = "true" if imap_ssl else "false"
+                        os.environ["MAIL_PROVIDER"] = "imap"
+                        # Créer un faux token SSO pour passer le _check_sso
+                        st.session_state.sso_token = {"access_token": "imap", "imap": True}
+                        st.session_state.sso_user  = {"name": imap_user, "email": imap_user}
+                        st.session_state.show_imap_login = False
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ Connexion IMAP échouée : {e}")
+
     return False
 
 
