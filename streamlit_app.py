@@ -129,12 +129,12 @@ def _check_sso() -> bool:
             return False
 
         oauth2 = OAuth2Component(
-            CLIENT_ID,
-            CLIENT_SECRET,
-            AUTHORIZATION_URL,
-            TOKEN_URL,
-            TOKEN_URL,
-            REDIRECT_URI,
+            client_id=CLIENT_ID,
+            client_secret=CLIENT_SECRET,
+            authorize_endpoint=AUTHORIZATION_URL,
+            token_endpoint=TOKEN_URL,
+            refresh_token_endpoint=None,
+            revoke_token_endpoint=None,
         )
 
         result = oauth2.authorize_button(
