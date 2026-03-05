@@ -421,9 +421,10 @@ if page == "lancer":
                             self.service = service
 
                         def fetch_unread_emails(self, max_results=500, mark_as_read=False):
-                            tickets, page_token, fetched = [], None, 0
-                            while fetched < max_results:
-                                batch_size = min(100, max_results - fetched)
+                            tickets, page_token = [], None
+                            while len(tickets) < max_results:
+                                remaining = max_results - len(tickets)
+                                batch_size = min(100, remaining)
                                 params = {"userId": "me", "q": "is:unread",
                                           "maxResults": batch_size, "labelIds": ["INBOX"]}
                                 if page_token:
@@ -433,6 +434,8 @@ if page == "lancer":
                                 if not messages:
                                     break
                                 for msg_ref in messages:
+                                    if len(tickets) >= max_results:
+                                        break
                                     mid = msg_ref["id"]
                                     try:
                                         time.sleep(0.1)
@@ -448,8 +451,6 @@ if page == "lancer":
                                             self.mark_as_read(mid)
                                     except Exception:
                                         pass
-                                    finally:
-                                        fetched += 1
                                 page_token = resp.get("nextPageToken")
                                 if not page_token:
                                     break
