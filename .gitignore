@@ -24,4 +24,5 @@ context.txt
 prompt.txt
 
 # ── Archives ──────────────────────────────────────────
-archive/
+archive/context.txt
+prompt.txt
