@@ -520,9 +520,13 @@ if page == "lancer":
                             add_log("\n⏰ TIMEOUT — fetch_unread_emails bloqué après 30s")
                             add_log("📋 RAPPORT :")
                             add_log(f"  • Provider : {provider.upper()}")
-                            add_log("  • Cause probable : token SSO expiré ou sans scope Gmail")
-                            add_log("  • Solution : déconnectez-vous et reconnectez-vous via Google")
-                            st.error("⏰ Timeout récupération emails. Reconnectez-vous via Google.")
+                            add_log("  • Cause probable : token SSO sans scope Gmail (ancien consentement)")
+                            add_log("  • Solution : cliquez sur 'Se reconnecter' ci-dessous")
+                            st.error("⏰ Timeout — le token ne donne pas accès à Gmail.")
+                            if st.button("🔄 Se reconnecter avec les bons accès", type="primary"):
+                                st.session_state.pop("sso_token", None)
+                                st.session_state.pop("sso_user", None)
+                                st.rerun()
                             st.stop()
 
                     if _result_holder["error"]:
