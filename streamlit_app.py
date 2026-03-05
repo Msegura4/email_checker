@@ -475,7 +475,7 @@ if page == "lancer":
                                         sujet = next(
                                             (h["value"] for h in headers if h["name"].lower() == "subject"),
                                             "(Sans sujet)")
-                                        corps = GmailReader._extract_body(msg.get("payload", {}))
+                                        corps = GmailReader._extract_body(GmailReader, msg.get("payload", {}))
                                         tickets.append({"id": mid, "sujet": sujet, "corps": corps})
                                         if mark_as_read:
                                             self.mark_as_read(mid)
@@ -544,7 +544,7 @@ if page == "lancer":
                                 from mail_reader_gmail import GmailReader as _GR
                                 headers = msg.get("payload", {}).get("headers", [])
                                 sujet = next((h["value"] for h in headers if h["name"].lower() == "subject"), "(Sans sujet)")
-                                corps = _GR._extract_body(msg.get("payload", {}))
+                                corps = _GR._extract_body(_GR, msg.get("payload", {}))
                                 tickets.append({"id": msg_ref["id"], "sujet": sujet, "corps": corps})
                             _result_holder["tickets"] = tickets
                             _result_holder["step"] = "terminé"
