@@ -659,15 +659,36 @@ if page == "lancer":
         @st.dialog("📧 Contenu de l'email", width="large")
         def show_email(idx):
             import re
-
             mail = results[idx]
-            st.markdown(f"**Sujet :** {mail['Sujet']}")
-            st.markdown(f"**Catégorie :** {mail['Catégorie']}")
-            st.markdown(f"**Urgence :** {mail['Urgence']}")
-            st.divider()
-            st.markdown("**Synthèse :**")
-            st.info(mail["Synthèse"])
-            st.markdown("**Corps du mail :**")
+
+            st.markdown("""
+            <style>
+            div[role="dialog"] { background-color: #0f1117 !important; }
+            div[role="dialog"] p, div[role="dialog"] span,
+            div[role="dialog"] label { color: #e2e8f0 !important; }
+            div[role="dialog"] hr { border-color: rgba(255,255,255,0.1) !important; }
+            </style>
+            """, unsafe_allow_html=True)
+
+            st.markdown(f"""
+            <div style='background:#1e2130; border:1px solid rgba(255,255,255,0.08);
+                        border-radius:10px; padding:16px 20px; margin-bottom:12px;'>
+                <div style='font-size:1rem; font-weight:600; color:#f1f5f9; margin-bottom:10px;'>{mail['Sujet']}</div>
+                <div style='display:flex; gap:10px; flex-wrap:wrap;'>
+                    <span style='background:#2d3748; color:#94a3b8; font-size:0.78rem; padding:3px 10px; border-radius:20px;'>📂 {mail['Catégorie']}</span>
+                    <span style='background:#2d3748; color:#f59e0b; font-size:0.78rem; padding:3px 10px; border-radius:20px;'>🚨 {mail['Urgence']}</span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            st.markdown(f"""
+            <div style='background:#1a2035; border-left:3px solid #4f8ef7;
+                        border-radius:0 8px 8px 0; padding:12px 16px; margin-bottom:16px;
+                        color:#cbd5e1; font-size:0.9rem; line-height:1.6;'>
+                💡 <strong style='color:#93c5fd;'>Synthèse :</strong> {mail["Synthèse"]}
+            </div>
+            """, unsafe_allow_html=True)
+
             corps = mail.get("Corps", "(Corps non disponible)")
             corps = re.sub(r"<style[^>]*>.*?</style>", " ", corps, flags=re.DOTALL)
             corps = re.sub(r"<script[^>]*>.*?</script>", " ", corps, flags=re.DOTALL)
@@ -678,10 +699,11 @@ if page == "lancer":
             corps = re.sub(r"&gt;", ">", corps)
             corps = re.sub(r"[ \t]{2,}", " ", corps)
             corps = re.sub(r"\n{3,}", "\n\n", corps).strip()
+
             st.markdown(
-                f"<div style='background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); "
-                f"border-radius:8px; padding:16px; font-size:0.88rem; line-height:1.6; "
-                f"white-space:pre-wrap; user-select:text; color:#e2e8f0; max-height:350px; overflow-y:auto;'>"
+                f"<div style='background:#0f1117; border:1px solid rgba(255,255,255,0.08);"
+                f"border-radius:8px; padding:16px; font-size:0.85rem; line-height:1.7;"
+                f"white-space:pre-wrap; color:#cbd5e1; max-height:380px; overflow-y:auto;'>"
                 f"{corps}</div>",
                 unsafe_allow_html=True,
             )
