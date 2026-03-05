@@ -406,8 +406,7 @@ if page == "lancer":
             logs.append(msg)
             log_area.code("\n".join(logs), language=None)
 
-        with st.spinner("Traitement en cours..."):
-            try:
+        try:
                 from agent_mail import classify_mail
 
                 provider = os.getenv("MAIL_PROVIDER", "gmail").lower()
@@ -537,9 +536,9 @@ if page == "lancer":
                 else:
                     st.warning(f"⚠️ {success} succès, {errors} erreurs.")
 
-            except Exception as e:
-                add_log(f"\n❌ Erreur fatale : {e}")
-                st.error(f"Erreur : {e}")
+        except Exception as e:
+            add_log(f"\n❌ Erreur fatale : {e}")
+            st.error(f"Erreur : {e}")
 
     # ── Résultats ─────────────────────────────────────────────────────────────
     if "last_results" in st.session_state and st.session_state["last_results"]:
