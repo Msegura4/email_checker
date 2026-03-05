@@ -524,14 +524,33 @@ if page == "lancer":
 
                     # Fetch dans un thread avec timeout de 30s
                     import threading
-                    _result_holder = {"tickets": None, "error": None}
+                    _result_holder = {"tickets": None, "error": None, "step": "démarrage"}
                     def _fetch():
                         try:
-                            _result_holder["tickets"] = reader.fetch_unread_emails(
-                                max_results=max_emails, mark_as_read=False
-                            )
+                            _result_holder["step"] = "list messages"
+                            svc = reader.service
+                            resp = svc.users().messages().list(
+                                userId="me", q="is:unread", maxResults=1, labelIds=["INBOX"]
+                            ).execute()
+                            _result_holder["step"] = f"list OK — {len(resp.get('messages', []))} msgs"
+                            messages = resp.get("messages", [])
+                            tickets = []
+                            for msg_ref in messages:
+                                _result_holder["step"] = f"get message {msg_ref['id']}"
+                                msg = svc.users().messages().get(
+                                    userId="me", id=msg_ref["id"], format="full"
+                                ).execute()
+                                _result_holder["step"] = "extraction body"
+                                from mail_reader_gmail import GmailReader as _GR
+                                headers = msg.get("payload", {}).get("headers", [])
+                                sujet = next((h["value"] for h in headers if h["name"].lower() == "subject"), "(Sans sujet)")
+                                corps = _GR._extract_body(msg.get("payload", {}))
+                                tickets.append({"id": msg_ref["id"], "sujet": sujet, "corps": corps})
+                            _result_holder["tickets"] = tickets
+                            _result_holder["step"] = "terminé"
                         except Exception as e:
                             _result_holder["error"] = e
+                            _result_holder["step"] = f"erreur : {e}"
 
                     _thread = threading.Thread(target=_fetch)
                     _thread.start()
@@ -539,14 +558,16 @@ if page == "lancer":
                     while _thread.is_alive():
                         time.sleep(1)
                         _waited += 1
-                        add_log(f"[INFO] Récupération en cours... ({_waited}s)")
+                        _step = _result_holder.get("step", "?")
+                        add_log(f"[INFO] ({_waited}s) étape : {_step}")
                         if _waited >= 30:
+                            _step = _result_holder.get("step", "?")
                             add_log("\n⏰ TIMEOUT — fetch_unread_emails bloqué après 30s")
                             add_log("📋 RAPPORT :")
                             add_log(f"  • Provider : {provider.upper()}")
-                            add_log("  • Cause probable : token SSO sans scope Gmail (ancien consentement)")
+                            add_log(f"  • Bloqué à : {_step}")
                             add_log("  • Solution : cliquez sur 'Se reconnecter' ci-dessous")
-                            st.error("⏰ Timeout — le token ne donne pas accès à Gmail.")
+                            st.error(f"⏰ Timeout — bloqué à : {_step}")
                             if st.button("🔄 Se reconnecter avec les bons accès", type="primary"):
                                 st.session_state.pop("sso_token", None)
                                 st.session_state.pop("sso_user", None)
