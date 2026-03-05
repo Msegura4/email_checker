@@ -446,9 +446,10 @@ if page == "lancer":
                                         tickets.append({"id": mid, "sujet": sujet, "corps": corps})
                                         if mark_as_read:
                                             self.mark_as_read(mid)
-                                        fetched += 1
                                     except Exception:
-                                        continue
+                                        pass
+                                    finally:
+                                        fetched += 1
                                 page_token = resp.get("nextPageToken")
                                 if not page_token:
                                     break
