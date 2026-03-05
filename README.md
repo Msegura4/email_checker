@@ -10,6 +10,18 @@ Application Streamlit qui lit vos emails, les classifie automatiquement par cat�
 
 ---
 
+## 📸 Aperçu
+
+| Choisir un tri | Lancer le tri |
+|---|---|
+| ![Choisir un tri](docs/screenshot_choisir_profil.png) | ![Lancer le tri](docs/screenshot_lancer_tri.png) |
+
+| Compte connecté | Tris par défaut |
+|---|---|
+| ![Compte connecté](docs/screenshot_compte_connecte.png) | ![Tris par défaut](docs/screenshot_tris_defaut.png) |
+
+---
+
 ## 🚀 Ce que ça fait
 
 1. Connexion à votre boîte mail (Gmail OAuth2 ou IMAP)
@@ -163,6 +175,7 @@ Depuis l'app : **dupliquer** un profil par défaut pour le personnaliser, ou **c
 │       ├── ressources_humaines.json
 │       ├── charge_communication.json
 │       └── publicite.json
+├── docs/                         # Screenshots pour le README
 ├── .secrets.toml.example         # Exemple de secrets pour Streamlit Cloud
 ├── .env.example                  # Exemple de variables d'environnement
 ├── .gitignore                    # Exclut .env, token.json, credentials.json...
