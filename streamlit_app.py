@@ -404,7 +404,7 @@ if page == "lancer":
     with col_b:
         mark_as_read = st.toggle("Marquer comme lus après traitement", value=False)
     with col_c:
-        delay = st.slider("Délai entre appels LLM (s)", 0.0, 2.0, 0.5, 0.1)
+        delay = st.slider("Délai entre appels LLM (s)", 0.0, 3.0, 1.0, 0.1)
 
     st.divider()
     log_area = st.empty()
@@ -582,7 +582,17 @@ if page == "lancer":
 
                         _check_timeout(f"Classification email {i}/{len(tickets)}")
                         try:
-                            result = classify_mail(f"Sujet : {sujet}\n\n{corps}")
+                            # Retry automatique si rate limit Groq
+                            for _attempt in range(3):
+                                try:
+                                    result = classify_mail(f"Sujet : {sujet}\n\n{corps}")
+                                    break
+                                except Exception as _e:
+                                    if _attempt < 2:
+                                        add_log(f"  ⚠️ Groq rate limit, retry {_attempt+1}/3...")
+                                        time.sleep(3)
+                                    else:
+                                        raise _e
                             categorie = result.get("categorie", "")
                             urgence = result.get("urgence", "")
                             resume = result.get("résumé", sujet)
