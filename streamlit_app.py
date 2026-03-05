@@ -333,11 +333,9 @@ st.sidebar.markdown('<p class="nav-section">Principal</p>', unsafe_allow_html=Tr
 if st.sidebar.button("🚀 Lancer le tri", key="nav_lancer"):
     _nav("lancer")
 if st.sidebar.button("📧 Compte connecté", key="nav_compte"):
-    st.session_state.pop("_mail_tab", None)
     _nav("admin_mail")
 if st.sidebar.button("🔄 Changer de compte mail", key="nav_changer_mail"):
-    st.session_state["_mail_tab"] = "changer"
-    _nav("admin_mail")
+    _nav("changer_compte")
 if st.sidebar.button("🚪 Déconnecter son compte mail", key="nav_logout_mail"):
     st.session_state["sso_token"] = None
     st.session_state["sso_user"] = None
@@ -1171,96 +1169,95 @@ elif page == "mes_profils":
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# PAGE — Connexion mail
+# PAGE — Compte connecté
 # ═════════════════════════════════════════════════════════════════════════════
 elif page == "admin_mail":
     st.title("📧 Compte connecté")
+    current_provider = os.getenv("MAIL_PROVIDER", "gmail")
+    if current_provider == "gmail":
+        try:
+            _svc       = _build_gmail_service_from_sso()
+            _profile   = _svc.users().getProfile(userId="me").execute()
+            _email     = _profile.get("emailAddress", "inconnu")
+            _n_msgs    = _profile.get("messagesTotal", "?")
+            _n_threads = _profile.get("threadsTotal", "?")
 
-    tab_compte, tab_changer = st.tabs(["📧 Compte connecté", "🔄 Changer de compte mail"])
-
-    # ── Onglet 1 : Compte connecté ────────────────────────────────────────────
-    with tab_compte:
-        current_provider = os.getenv("MAIL_PROVIDER", "gmail")
-        if current_provider == "gmail":
-            try:
-                _svc       = _build_gmail_service_from_sso()
-                _profile   = _svc.users().getProfile(userId="me").execute()
-                _email     = _profile.get("emailAddress", "inconnu")
-                _n_msgs    = _profile.get("messagesTotal", "?")
-                _n_threads = _profile.get("threadsTotal", "?")
-
-                st.success(f"✅ Connecté en tant que **{_email}**")
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.metric("Messages totaux", f"{_n_msgs:,}" if isinstance(_n_msgs, int) else _n_msgs)
-                with col2:
-                    st.metric("Fils de discussion", f"{_n_threads:,}" if isinstance(_n_threads, int) else _n_threads)
-            except Exception as e:
-                st.error(f"❌ Impossible de lire le compte : {e}")
+            st.success(f"✅ Connecté en tant que **{_email}**")
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Messages totaux", f"{_n_msgs:,}" if isinstance(_n_msgs, int) else _n_msgs)
+            with col2:
+                st.metric("Fils de discussion", f"{_n_threads:,}" if isinstance(_n_threads, int) else _n_threads)
+        except Exception as e:
+            st.error(f"❌ Impossible de lire le compte : {e}")
+    else:
+        imap_user = os.getenv("IMAP_USER", "")
+        imap_host = os.getenv("IMAP_HOST", "")
+        if imap_user and imap_host:
+            st.success(f"✅ Connecté via IMAP : **{imap_user}** @ {imap_host}")
         else:
-            imap_user = os.getenv("IMAP_USER", "")
-            imap_host = os.getenv("IMAP_HOST", "")
-            if imap_user and imap_host:
-                st.success(f"✅ Connecté via IMAP : **{imap_user}** @ {imap_host}")
-            else:
-                st.warning("⚠️ Aucun compte IMAP configuré.")
+            st.warning("⚠️ Aucun compte IMAP configuré.")
 
-    # ── Onglet 2 : Changer de compte ─────────────────────────────────────────
-    with tab_changer:
-        new_provider = st.radio(
-            "Choisir le type de compte mail",
-            [None, "gmail", "imap"],
-            index=0,
-            format_func=lambda x: "— Sélectionner —" if x is None else (
-                "📧 Gmail (OAuth2)" if x == "gmail" else "📬 IMAP (Thunderbird, Outlook...)"
-            ),
-            horizontal=True,
-        )
+# ═════════════════════════════════════════════════════════════════════════════
+# PAGE — Changer de compte mail
+# ═════════════════════════════════════════════════════════════════════════════
+elif page == "changer_compte":
+    st.title("🔄 Changer de compte mail")
+    st.divider()
 
-        if new_provider == "gmail":
-            # Déconnecte le SSO → renvoie vers la page de connexion Google
-            st.session_state["sso_token"] = None
-            st.session_state["sso_user"] = None
+    new_provider = st.radio(
+        "Choisir le type de compte mail",
+        [None, "gmail", "imap"],
+        index=0,
+        format_func=lambda x: "— Sélectionner —" if x is None else (
+            "📧 Gmail (OAuth2)" if x == "gmail" else "📬 IMAP (Thunderbird, Outlook...)"
+        ),
+        horizontal=True,
+    )
+
+    if new_provider == "gmail":
+        st.session_state["sso_token"] = None
+        st.session_state["sso_user"] = None
+        if not ENV_FILE.exists():
+            ENV_FILE.touch()
+        set_key(str(ENV_FILE), "MAIL_PROVIDER", "gmail")
+        os.environ["MAIL_PROVIDER"] = "gmail"
+        st.rerun()
+
+    elif new_provider == "imap":
+        st.divider()
+        with st.form("imap_form"):
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                imap_host = st.text_input("Hôte IMAP", value=os.getenv("IMAP_HOST", ""), placeholder="imap.gmail.com")
+            with col2:
+                imap_port = st.text_input("Port", value=os.getenv("IMAP_PORT", "993"))
+            imap_user   = st.text_input("Email",        value=os.getenv("IMAP_USER",     ""))
+            imap_pass   = st.text_input("Mot de passe", value=os.getenv("IMAP_PASSWORD", ""), type="password")
+            imap_folder = st.text_input("Dossier",      value=os.getenv("IMAP_FOLDER",   "INBOX"))
+            imap_ssl    = st.checkbox("SSL", value=os.getenv("IMAP_USE_SSL", "true") == "true")
+            save_imap   = st.form_submit_button("💾 Sauvegarder la config IMAP", type="primary")
+
+        if save_imap:
             if not ENV_FILE.exists():
                 ENV_FILE.touch()
-            set_key(str(ENV_FILE), "MAIL_PROVIDER", "gmail")
-            os.environ["MAIL_PROVIDER"] = "gmail"
-            st.rerun()
+            set_key(str(ENV_FILE), "IMAP_HOST",     imap_host)
+            set_key(str(ENV_FILE), "IMAP_PORT",     str(imap_port))
+            set_key(str(ENV_FILE), "IMAP_USER",     imap_user)
+            set_key(str(ENV_FILE), "IMAP_PASSWORD", imap_pass)
+            set_key(str(ENV_FILE), "IMAP_FOLDER",   imap_folder)
+            set_key(str(ENV_FILE), "IMAP_USE_SSL",  "true" if imap_ssl else "false")
+            set_key(str(ENV_FILE), "MAIL_PROVIDER", "imap")
+            os.environ["MAIL_PROVIDER"] = "imap"
+            st.success("✅ Config IMAP sauvegardée.")
 
-        elif new_provider == "imap":
-            st.divider()
-            with st.form("imap_form"):
-                col1, col2 = st.columns([3, 1])
-                with col1:
-                    imap_host = st.text_input("Hôte IMAP", value=os.getenv("IMAP_HOST", ""), placeholder="imap.gmail.com")
-                with col2:
-                    imap_port = st.text_input("Port", value=os.getenv("IMAP_PORT", "993"))
-                imap_user   = st.text_input("Email",        value=os.getenv("IMAP_USER",     ""))
-                imap_pass   = st.text_input("Mot de passe", value=os.getenv("IMAP_PASSWORD", ""), type="password")
-                imap_folder = st.text_input("Dossier",      value=os.getenv("IMAP_FOLDER",   "INBOX"))
-                imap_ssl    = st.checkbox("SSL", value=os.getenv("IMAP_USE_SSL", "true") == "true")
-                save_imap   = st.form_submit_button("💾 Sauvegarder la config IMAP", type="primary")
-
-            if save_imap:
-                if not ENV_FILE.exists():
-                    ENV_FILE.touch()
-                set_key(str(ENV_FILE), "IMAP_HOST",     imap_host)
-                set_key(str(ENV_FILE), "IMAP_PORT",     str(imap_port))
-                set_key(str(ENV_FILE), "IMAP_USER",     imap_user)
-                set_key(str(ENV_FILE), "IMAP_PASSWORD", imap_pass)
-                set_key(str(ENV_FILE), "IMAP_FOLDER",   imap_folder)
-                set_key(str(ENV_FILE), "IMAP_USE_SSL",  "true" if imap_ssl else "false")
-                set_key(str(ENV_FILE), "MAIL_PROVIDER", "imap")
-                os.environ["MAIL_PROVIDER"] = "imap"
-                st.success("✅ Config IMAP sauvegardée.")
-
-            st.divider()
-            st.markdown("**Hôtes IMAP courants**")
-            st.table({
-                "Service":   ["Gmail", "Outlook", "Yahoo", "OVH"],
-                "IMAP_HOST": ["imap.gmail.com", "outlook.office365.com", "imap.mail.yahoo.com", "ssl0.ovh.net"],
-                "Port":      ["993", "993", "993", "993"],
-            })
+        st.divider()
+        st.markdown("**Hôtes IMAP courants**")
+        st.table({
+            "Service":   ["Gmail", "Outlook", "Yahoo", "OVH"],
+            "IMAP_HOST": ["imap.gmail.com", "outlook.office365.com", "imap.mail.yahoo.com", "ssl0.ovh.net"],
+            "Port":      ["993", "993", "993", "993"],
+        })
 
 # ═════════════════════════════════════════════════════════════════════════════
 # PAGE — Diagnostic
