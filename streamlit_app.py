@@ -1384,26 +1384,55 @@ elif page == "changer_compte":
     st.title("🔄 Changer de compte mail")
     st.divider()
 
-    new_provider = st.radio(
-        "Choisir le type de compte mail",
-        [None, "gmail", "imap"],
-        index=0,
-        format_func=lambda x: "— Sélectionner —" if x is None else (
-            "📧 Gmail (OAuth2)" if x == "gmail" else "📬 IMAP (Thunderbird, Outlook...)"
-        ),
-        horizontal=True,
-    )
+    if "changer_provider_choice" not in st.session_state:
+        st.session_state.changer_provider_choice = None
 
-    if new_provider == "gmail":
-        st.session_state["sso_token"] = None
-        st.session_state["sso_user"] = None
-        if not ENV_FILE.exists():
-            ENV_FILE.touch()
-        set_key(str(ENV_FILE), "MAIL_PROVIDER", "gmail")
-        os.environ["MAIL_PROVIDER"] = "gmail"
-        st.rerun()
+    # Deux grands boutons côte à côte
+    st.markdown("""
+    <style>
+    .provider-btn button {
+        height: 100px !important;
+        font-size: 1.1rem !important;
+        font-weight: 600 !important;
+        border-radius: 12px !important;
+        border: 2px solid rgba(255,255,255,0.1) !important;
+        transition: all 0.2s !important;
+    }
+    .provider-btn button:hover {
+        border-color: #4f8ef7 !important;
+        background: rgba(79,142,247,0.08) !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
-    elif new_provider == "imap":
+    col_gmail, col_imap = st.columns(2)
+    with col_gmail:
+        st.markdown('<div class="provider-btn">', unsafe_allow_html=True)
+        if st.button("📧 Gmail\n\nOAuth2 Google", use_container_width=True, key="btn_choose_gmail"):
+            st.session_state.changer_provider_choice = "gmail"
+        st.markdown('</div>', unsafe_allow_html=True)
+    with col_imap:
+        st.markdown('<div class="provider-btn">', unsafe_allow_html=True)
+        if st.button("📬 Autre compte mail\n\nIMAP (Outlook, Yahoo, OVH...)", use_container_width=True, key="btn_choose_imap"):
+            st.session_state.changer_provider_choice = "imap"
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    choice = st.session_state.changer_provider_choice
+
+    if choice == "gmail":
+        st.divider()
+        st.info("Vous allez être redirigé vers la page de connexion Google.")
+        if st.button("✅ Confirmer la reconnexion Google", type="primary"):
+            st.session_state["sso_token"] = None
+            st.session_state["sso_user"] = None
+            st.session_state.changer_provider_choice = None
+            if not ENV_FILE.exists():
+                ENV_FILE.touch()
+            set_key(str(ENV_FILE), "MAIL_PROVIDER", "gmail")
+            os.environ["MAIL_PROVIDER"] = "gmail"
+            st.rerun()
+
+    elif choice == "imap":
         st.divider()
         with st.form("imap_form"):
             col1, col2 = st.columns([3, 1])
@@ -1415,7 +1444,7 @@ elif page == "changer_compte":
             imap_pass   = st.text_input("Mot de passe", value=os.getenv("IMAP_PASSWORD", ""), type="password")
             imap_folder = st.text_input("Dossier",      value=os.getenv("IMAP_FOLDER",   "INBOX"))
             imap_ssl    = st.checkbox("SSL", value=os.getenv("IMAP_USE_SSL", "true") == "true")
-            save_imap   = st.form_submit_button("💾 Sauvegarder la config IMAP", type="primary")
+            save_imap   = st.form_submit_button("💾 Sauvegarder", type="primary", use_container_width=True)
 
         if save_imap:
             if not ENV_FILE.exists():
@@ -1428,6 +1457,7 @@ elif page == "changer_compte":
             set_key(str(ENV_FILE), "IMAP_USE_SSL",  "true" if imap_ssl else "false")
             set_key(str(ENV_FILE), "MAIL_PROVIDER", "imap")
             os.environ["MAIL_PROVIDER"] = "imap"
+            st.session_state.changer_provider_choice = None
             st.success("✅ Config IMAP sauvegardée.")
 
         st.divider()
