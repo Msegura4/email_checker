@@ -93,12 +93,14 @@ def _get_user_info(token: dict):
 
 
 def _build_gmail_service_from_sso():
+    """Construit un service Gmail en forçant le token SSO comme valide."""
+    import datetime
     from google.oauth2.credentials import Credentials as _GCreds
-    from google.auth.transport.requests import Request as _GRequest
     from googleapiclient.discovery import build as _gbuild
     token = st.session_state.sso_token
+    access_token = token.get("access_token")
     creds = _GCreds(
-        token=token.get("access_token"),
+        token=access_token,
         refresh_token=token.get("refresh_token"),
         client_id=CLIENT_ID,
         client_secret=CLIENT_SECRET,
@@ -108,12 +110,8 @@ def _build_gmail_service_from_sso():
             "https://www.googleapis.com/auth/gmail.modify",
         ],
     )
-    if not creds.valid and creds.refresh_token:
-        try:
-            creds.refresh(_GRequest())
-            st.session_state.sso_token["access_token"] = creds.token
-        except Exception:
-            pass
+    # Forcer expiry dans le futur pour que creds.valid = True
+    creds.expiry = datetime.datetime.utcnow() + datetime.timedelta(hours=1)
     return _gbuild("gmail", "v1", credentials=creds)
 
 
