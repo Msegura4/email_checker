@@ -133,7 +133,7 @@ def _check_sso() -> bool:
             CLIENT_SECRET,
             AUTHORIZATION_URL,
             TOKEN_URL,
-            REVOKE_URL,
+            TOKEN_URL,
             REDIRECT_URI,
         )
 
