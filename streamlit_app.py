@@ -409,7 +409,7 @@ if active_profile:
         f"<strong>Tri actif :<br>{active_profile.get('emoji','📁')} {active_profile['nom']}</strong>",
         unsafe_allow_html=True,
     )
-if st.sidebar.button("↩ Changer de profil", key="btn_change_profile"):
+if st.sidebar.button("↩ Changer de tri", key="btn_change_profile"):
     profile_picker()
 
 st.sidebar.divider()
@@ -1593,23 +1593,6 @@ elif page == "admin_diag":
 elif page == "roadmap":
     st.title("🚧 Améliorations à venir")
     st.caption("Idées et évolutions prévues pour les prochaines versions.")
-
-    st.divider()
-
-    st.subheader("Support multi-utilisateurs")
-    st.markdown(
-        """
-L'architecture actuelle est pensée pour un usage **mono-utilisateur** (une machine, un compte Google).
-
-Pour permettre à plusieurs utilisateurs d'utiliser l'application indépendamment, il faudrait :
-
-- **Passer l'app Google Cloud en mode Production** — aujourd'hui seuls les emails ajoutés manuellement comme *testeurs* dans la Google Cloud Console peuvent s'authentifier. Un utilisateur inconnu reçoit une erreur `403 access_denied`.
-- **Implémenter un OAuth2 web flow côté serveur** — chaque utilisateur aurait sa propre session et son propre `token.json`, géré dynamiquement plutôt que stocké sur le disque.
-- **Isoler les configurations par utilisateur** — clé Groq, Google Sheet ID, profils actifs, chacun dans son propre espace.
-
-En attendant, la solution la plus simple pour partager l'app est d'ajouter l'email de chaque utilisateur comme testeur dans la [Google Cloud Console](https://console.cloud.google.com).
-    """
-    )
 
     st.divider()
 
