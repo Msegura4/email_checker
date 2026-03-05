@@ -389,8 +389,13 @@ if st.session_state.sso_user:
         with col1:
             st.image(st.session_state.sso_user.get("picture", ""), width=50)
         with col2:
-            st.caption(f"**{st.session_state.sso_user.get('name')}**")
-            st.caption(st.session_state.sso_user.get("email"))
+            st.markdown(
+                f"<div style='line-height:1.3; padding-top:4px;'>"
+                f"<span style='font-weight:700; font-size:0.88rem; color:#f1f5f9;'>{st.session_state.sso_user.get('name', '')}</span><br>"
+                f"<span style='font-size:0.78rem; color:#94a3b8;'>{st.session_state.sso_user.get('email', '')}</span>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
         if st.button("🚪 Déconnexion"):
             st.session_state.sso_token = None
             st.session_state.sso_user = None
@@ -1639,6 +1644,18 @@ Pour les connexions avec un compte Gmail, il sera possible de créer un Google S
 - ...
     """
     )
+
+    st.divider()
+
+    st.subheader("Persistance de la connexion")
+    st.markdown("""
+Actuellement, la session Google est perdue à chaque rechargement de page — l'utilisateur doit se reconnecter à chaque fois.
+
+Pour résoudre cela, il faudrait :
+
+- **Stocker le token OAuth dans un cookie persistant** côté navigateur, afin de restaurer automatiquement la session sans redemander l'autorisation Google.
+- **Gérer le rafraîchissement automatique du token** — les tokens Google expirent après 1h, un mécanisme de refresh silencieux éviterait les déconnexions inattendues.
+    """)
 
     st.divider()
     st.info(
