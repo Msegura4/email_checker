@@ -1,5 +1,9 @@
 # 🎫 Email Checker
 
+EN — This app is not verified by Google, so any access request via the public link must be submitted to the authors; you can also self-host it locally or on your own Streamlit Cloud instance.
+
+FR — Cette application n'est pas vérifiée par Google, toute demande d'accès via le lien public doit être adressée aux auteurs ; il est également possible de l'installer soi-même en local ou sur son propre Streamlit Cloud.
+
 Application Streamlit qui lit vos emails, les classifie automatiquement par catégorie et urgence grâce à un LLM, et affiche les résultats dans une interface claire.
 
 **Compatible Gmail (OAuth2) et tout compte IMAP (Outlook, Yahoo, OVH...).**
