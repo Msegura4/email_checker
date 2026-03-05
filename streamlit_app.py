@@ -527,26 +527,10 @@ if page == "lancer":
                     _result_holder = {"tickets": None, "error": None, "step": "démarrage"}
                     def _fetch():
                         try:
-                            _result_holder["step"] = "list messages"
-                            svc = reader.service
-                            resp = svc.users().messages().list(
-                                userId="me", q="is:unread", maxResults=1, labelIds=["INBOX"]
-                            ).execute()
-                            _result_holder["step"] = f"list OK — {len(resp.get('messages', []))} msgs"
-                            messages = resp.get("messages", [])
-                            tickets = []
-                            for msg_ref in messages:
-                                _result_holder["step"] = f"get message {msg_ref['id']}"
-                                msg = svc.users().messages().get(
-                                    userId="me", id=msg_ref["id"], format="full"
-                                ).execute()
-                                _result_holder["step"] = "extraction body"
-                                from mail_reader_gmail import GmailReader as _GR
-                                headers = msg.get("payload", {}).get("headers", [])
-                                sujet = next((h["value"] for h in headers if h["name"].lower() == "subject"), "(Sans sujet)")
-                                corps = _GR._extract_body(_GR, msg.get("payload", {}))
-                                tickets.append({"id": msg_ref["id"], "sujet": sujet, "corps": corps})
-                            _result_holder["tickets"] = tickets
+                            _result_holder["step"] = "récupération emails"
+                            _result_holder["tickets"] = reader.fetch_unread_emails(
+                                max_results=max_emails, mark_as_read=False
+                            )
                             _result_holder["step"] = "terminé"
                         except Exception as e:
                             _result_holder["error"] = e
