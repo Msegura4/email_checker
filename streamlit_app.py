@@ -475,7 +475,14 @@ if page == "lancer":
 
                 category_to_sheet = get_category_to_sheet(active_profile)
 
-                with MailReader() as reader:
+                try:
+                    reader = MailReader()
+                except Exception as e:
+                    add_log(f"❌ Impossible de créer le reader : {e}")
+                    st.error(f"Erreur connexion mail : {e}")
+                    st.stop()
+
+                with reader:
                     add_log(f"[INFO] Récupération des emails (max {max_emails})...")
                     tickets = reader.fetch_unread_emails(
                         max_results=max_emails, mark_as_read=False
