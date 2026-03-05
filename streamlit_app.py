@@ -435,6 +435,7 @@ if page == "lancer":
                                 for msg_ref in messages:
                                     mid = msg_ref["id"]
                                     try:
+                                        time.sleep(0.1)
                                         msg = self.service.users().messages().get(
                                             userId="me", id=mid, format="full").execute()
                                         headers = msg.get("payload", {}).get("headers", [])
