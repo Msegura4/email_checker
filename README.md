@@ -16,10 +16,17 @@ Application Streamlit qui lit vos emails, les classifie automatiquement par cat�
 |---|---|
 | ![Choisir un tri](docs/screenshot_choisir_profil.png) | ![Lancer le tri](docs/screenshot_lancer_tri.png) |
 
+| Résultats & gestion | Popup contenu email |
+|---|---|
+| ![Résultats](docs/screenshot_resultats.png) | ![Popup email](docs/screenshot_popup_email.png) |
+
 | Compte connecté | Tris par défaut |
 |---|---|
 | ![Compte connecté](docs/screenshot_compte_connecte.png) | ![Tris par défaut](docs/screenshot_tris_defaut.png) |
 
+| Améliorations à venir | |
+|---|---|
+| ![Améliorations](docs/screenshot_ameliorations.png) | |
 ---
 
 ## 🚀 Ce que ça fait
