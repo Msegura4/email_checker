@@ -208,7 +208,6 @@ Depuis l'app : **dupliquer** un profil par défaut pour le personnaliser, ou **c
 
 - **Session non persistante** : la connexion Google est perdue à chaque rechargement de page
 - **100 testeurs max** en mode Test Google (sans vérification de l'app)
-- **500k tokens/jour** sur le plan gratuit Groq (~500 emails selon leur longueur)
 - La suppression d'emails depuis l'interface fonctionne uniquement avec Gmail (pas encore IMAP)
 
 ---
